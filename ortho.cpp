@@ -22,11 +22,37 @@
 #include <array>
 #include <algorithm>
 #include <functional>
+#include <stdexcept>
 #include <boost/dynamic_bitset.hpp>
+#include "aligned_buffer.h"
+#include "vec_unit.h"
 
 typedef CL_Vec3i vec3i;
 typedef CL_Vec3f vec3f;
 
+struct col3f_sse {
+	float r;
+	float g;
+	float b;
+	float x;
+
+	col3f_sse( float r_, float g_, float b_ ) : r(r_), g(g_), b(b_) {}
+	col3f_sse( const vec3f & v ) : r(v.r), g(v.g), b(v.b), x(0) {} // { std::cout << "assign: " << r << " " << g << " " << b << "\n";}
+	const col3f_sse &operator=( const col3f_sse &other ) {
+		r = other.r;
+		g = other.g;
+		b = other.b;
+		x = 0;
+		return *this;
+	}
+
+	col3f_sse() {}
+
+//	inline operator vec3f() {
+//		return vec3f(r, g, b );
+//	}
+
+};
 
 template<typename vec_t>
 typename vec_t::datatype dist_sqr( const vec_t &v1, const vec_t &v2 ) {
@@ -110,8 +136,129 @@ class util {
 public:
 
 
-	template<int sp>
-	static bool occluded(vec3i p0, vec3i p1, const bitmap3d &solid)
+//	template<int sp>
+//	static bool occluded(vec3i p0, vec3i p1, const bitmap3d &solid)
+//	{
+//		// 3d bresenham, ripped from http://www.cobrabytes.com/index.php?topic=1150.0
+//
+//
+//
+//		int x0 = p0.x;
+//		int y0 = p0.y;
+//		int z0 = p0.z;
+//
+//		int x1 = p1.x;
+//		int y1 = p1.y;
+//		int z1 = p1.z;
+//
+//
+//
+//		//'steep' xy Line, make longest delta x plane
+//		const bool swap_xy = abs(y1 - y0) > abs(x1 - x0);
+//		if( swap_xy ) {
+//			std::swap(x0, y0);
+//			std::swap(x1, y1);
+//		}
+//
+//		//do same for xz
+//		const bool swap_xz = abs(z1 - z0) > abs(x1 - x0);
+//		if( swap_xz ) {
+//			std::swap(x0, z0);
+//			std::swap(x1, z1);
+//		}
+//
+//			//delta is Length in each plane
+//		int delta_x = abs(x1 - x0);
+//		int delta_y = abs(y1 - y0);
+//		int delta_z = abs(z1 - z0);
+//
+//		//drift controls when to step in 'shallow' planes
+//		//starting value keeps Line centred
+//		int drift_xy  = (delta_x / 2);
+//		int drift_xz  = (delta_x / 2);
+//
+//			//direction of line
+//		const int step_x = (x0 > x1) ? -1 : 1;
+//		const int step_y = (y0 > y1) ? -1 : 1;
+//		const int step_z = (z0 > z1) ? -1 : 1;
+//
+//			//starting point
+//		int y = y0;
+//		int z = z0;
+//
+//		//step through longest delta (which we have swapped to x)
+//		for( int x = x0; x != x1; x += step_x ) {
+//
+//			//copy position
+//			int cx = x;
+//			int cy = y;
+//			int cz = z;
+//
+//			//unswap (in reverse)
+//			if( swap_xz ) {
+//				std::swap(cx, cz);
+//			}
+//
+//			if( swap_xy ) {
+//				std::swap(cx, cy);
+//			}
+//
+//				//passes through this point
+//			//debugmsg(":" + cx + ", " + cy + ", " + cz)
+//			if( solid( cx / sp, cy / sp, cz / sp ) ) {
+//				return true;
+//			}
+//			//update progress in other planes
+//			drift_xy = drift_xy - delta_y;
+//			drift_xz = drift_xz - delta_z;
+//
+//			//step in y plane
+//			if( drift_xy < 0 ) {
+//				y = y + step_y;
+//				drift_xy = drift_xy + delta_x;
+//			}
+//
+//
+//			//same in z
+//			if( drift_xz < 0 ) {
+//				z = z + step_z;
+//				drift_xz = drift_xz + delta_x;
+//			}
+//		}
+//
+//		return false;
+////
+////
+//////         int x0 = 1;
+//////         int x1 = 10;
+//////
+//////         int y0 = 1;
+//////         int y1 = 5;
+////		int dx =  abs(x1-x0), sx = x0<x1 ? 1 : -1;
+////		int dy = -abs(y1-y0), sy = y0<y1 ? 1 : -1;
+////		int dz = -abs(y1-y0), sy = y0<y1 ? 1 : -1;
+////		int err = dx+dy, e2; /* error value e_xy */
+////
+////		while(true){  /* loop */
+////			//setPixel(x0,y0);
+////			//m(y0,x0) = 1.0;
+////			if( solid(y0,x0) ) {
+////				return true;
+////			}
+////
+////			if (x0==x1 && y0==y1) break;
+////			e2 = 2*err;
+////			if (e2 >= dy) { err += dy; x0 += sx; } /* e_xy+e_x > 0 */
+////			if (e2 <= dx) { err += dx; y0 += sy; } /* e_xy+e_y < 0 */
+////		}
+////
+////		return false;
+//	}
+
+
+
+
+	static bool occluded2(vec3i p0, vec3i p1, const bitmap3d &solid)
 	{
 		// 3d bresenham, ripped from http://www.cobrabytes.com/index.php?topic=1150.0
 
@@ -161,44 +308,185 @@ public:
 		int z = z0;
 
 		//step through longest delta (which we have swapped to x)
-		for( int x = x0; x != x1; x += step_x ) {
 
-			//copy position
-			int cx = x;
-			int cy = y;
-			int cz = z;
 
-			//unswap (in reverse)
-			if( swap_xz ) {
-				std::swap(cx, cz);
+		if( swap_xz ) {
+			for( int x = x0; x != x1; x += step_x ) {
+
+				//copy position
+				int cx = z;
+				int cy = y;
+				int cz = x;
+
+				//unswap (in reverse)
+
+				//std::swap(cx, cz);
+
+
+					//passes through this point
+				//debugmsg(":" + cx + ", " + cy + ", " + cz)
+				if( solid( cx, cy, cz ) ) {
+					return true;
+				}
+				//update progress in other planes
+				drift_xy = drift_xy - delta_y;
+				drift_xz = drift_xz - delta_z;
+
+				//step in y plane
+				if( drift_xy < 0 ) {
+					y = y + step_y;
+					drift_xy = drift_xy + delta_x;
+				}
+
+
+				//same in z
+				if( drift_xz < 0 ) {
+					z = z + step_z;
+					drift_xz = drift_xz + delta_x;
+				}
+			}
+		} else if( swap_xz && swap_xy ) {
+			for( int x = x0; x != x1; x += step_x ) {
+
+				//copy position
+				int cx = y;
+				int cy = z;
+				int cz = x;
+
+				//unswap (in reverse)
+
+//				std::swap(cx, cz);
+//				std::swap(cx, cy);
+
+					//passes through this point
+				//debugmsg(":" + cx + ", " + cy + ", " + cz)
+				if( solid( cx, cy, cz ) ) {
+					return true;
+				}
+				//update progress in other planes
+				drift_xy = drift_xy - delta_y;
+				drift_xz = drift_xz - delta_z;
+
+				//step in y plane
+				if( drift_xy < 0 ) {
+					y = y + step_y;
+					drift_xy = drift_xy + delta_x;
+				}
+
+
+				//same in z
+				if( drift_xz < 0 ) {
+					z = z + step_z;
+					drift_xz = drift_xz + delta_x;
+				}
 			}
 
-			if( swap_xy ) {
-				std::swap(cx, cy);
-			}
+		} else if( swap_xy ) {
+			for( int x = x0; x != x1; x += step_x ) {
 
-				//passes through this point
-			//debugmsg(":" + cx + ", " + cy + ", " + cz)
-			if( solid( cx / sp, cy / sp, cz / sp ) ) {
-				return true;
-			}
-			//update progress in other planes
-			drift_xy = drift_xy - delta_y;
-			drift_xz = drift_xz - delta_z;
+				//copy position
+				int cx = y;
+				int cy = x;
+				int cz = z;
 
-			//step in y plane
-			if( drift_xy < 0 ) {
-				y = y + step_y;
-				drift_xy = drift_xy + delta_x;
-			}
+				//unswap (in reverse)
 
 
-			//same in z
-			if( drift_xz < 0 ) {
-				z = z + step_z;
-				drift_xz = drift_xz + delta_x;
+//				std::swap(cx, cy);
+
+					//passes through this point
+				//debugmsg(":" + cx + ", " + cy + ", " + cz)
+				if( solid( cx, cy, cz ) ) {
+					return true;
+				}
+				//update progress in other planes
+				drift_xy = drift_xy - delta_y;
+				drift_xz = drift_xz - delta_z;
+
+				//step in y plane
+				if( drift_xy < 0 ) {
+					y = y + step_y;
+					drift_xy = drift_xy + delta_x;
+				}
+
+
+				//same in z
+				if( drift_xz < 0 ) {
+					z = z + step_z;
+					drift_xz = drift_xz + delta_x;
+				}
 			}
+
+		} else {
+			for( int x = x0; x != x1; x += step_x ) {
+
+				//copy position
+				int cx = x;
+				int cy = y;
+				int cz = z;
+
+					//passes through this point
+				//debugmsg(":" + cx + ", " + cy + ", " + cz)
+				if( solid( cx, cy, cz ) ) {
+					return true;
+				}
+				//update progress in other planes
+				drift_xy = drift_xy - delta_y;
+				drift_xz = drift_xz - delta_z;
+
+				//step in y plane
+				if( drift_xy < 0 ) {
+					y = y + step_y;
+					drift_xy = drift_xy + delta_x;
+				}
+
+
+				//same in z
+				if( drift_xz < 0 ) {
+					z = z + step_z;
+					drift_xz = drift_xz + delta_x;
+				}
+			}
+
 		}
+//		for( int x = x0; x != x1; x += step_x ) {
+//
+//			//copy position
+//			int cx = x;
+//			int cy = y;
+//			int cz = z;
+//
+//			//unswap (in reverse)
+//			if( swap_xz ) {
+//				std::swap(cx, cz);
+//			}
+//
+//			if( swap_xy ) {
+//				std::swap(cx, cy);
+//			}
+//
+//				//passes through this point
+//			//debugmsg(":" + cx + ", " + cy + ", " + cz)
+//			if( solid( cx, cy, cz ) ) {
+//				return true;
+//			}
+//			//update progress in other planes
+//			drift_xy = drift_xy - delta_y;
+//			drift_xz = drift_xz - delta_z;
+//
+//			//step in y plane
+//			if( drift_xy < 0 ) {
+//				y = y + step_y;
+//				drift_xy = drift_xy + delta_x;
+//			}
+//
+//
+//			//same in z
+//			if( drift_xz < 0 ) {
+//				z = z + step_z;
+//				drift_xz = drift_xz + delta_x;
+//			}
+//		}
 
 		return false;
 //
@@ -228,7 +516,6 @@ public:
 //
 //		return false;
 	}
-
 	static bool occluded(vec3i p0, vec3i p1, const bitmap3d &solid)
 	{
 		// 3d bresenham, ripped from http://www.cobrabytes.com/index.php?topic=1150.0
@@ -279,6 +566,8 @@ public:
 		int z = z0;
 
 		//step through longest delta (which we have swapped to x)
+
+
 		for( int x = x0; x != x1; x += step_x ) {
 
 			//copy position
@@ -492,10 +781,10 @@ public:
 	static vec3f col_diff( dir_type dt ) {
 		switch( dt ) {
 		case dir_xy_p:
-			return vec3f(1.0, 0.0, 0.0 );
+			return vec3f(1.0, 0.5, 0.0 );
 
 		case dir_xy_n:
-			return vec3f(0.0, 0.0, 1.0 );
+			return vec3f(0.0, 1.0, 0.0 );
 
 		case dir_yz_p:
 		case dir_yz_n:
@@ -624,27 +913,118 @@ public:
 
 			}
 		}
+
+		//emit_sse_.assign( emit_rgb_.begin(), emit_rgb_.end() );
+
+
+	}
+
+	void post() {
+		std::copy( emit_rgb_.begin(), emit_rgb_.end(), emit_sse_.begin() );
+	}
+
+	float randf() const {
+		return std::rand() / float(RAND_MAX);
 	}
 
 	void render_emit_patches() {
+		static int x = 0;
+		static int xd = 1;
 		for( size_t i = 0; i < planes_.size(); ++i ) {
-			//if( (planes_[i].pos().y / 2) == 3 ) {
-			if( planes_[i].dir() == plane::dir_zx_p ) {
-				emit_rgb_[i] += planes_[i].col_diff() * 0.5;
+
+
+
+//			if( randf() > 0.9 ) {
+//				emit_rgb_[i] += vec3f(randf(), randf(), randf());
+//			}
+			if( (planes_[i].pos().y / 2) == x ) {
+			//if( planes_[i].dir() == plane::dir_zx_p ) {
+				emit_rgb_[i] += planes_[i].col_diff();
 			}
+
+
 		}
+		x += xd;
+		if( x > 15 || x == 0) {
+			xd = -xd;
+		}
+
+	}
+
+	void do_radiosity_sse( int steps = 10 ) {
+		steps = 1;
+//		std::fill(e_rad_sse_.begin(), e_rad_sse_.end(), vec3f(0.0, 0.0, 0.0));
+//		std::fill(e_rad2_sse_.begin(), e_rad2_sse_.end(), vec3f(0.0, 0.0, 0.0));
+
+		//std::copy( emit_sse_.begin(), emit_sse_.end(), e_rad_sse_.begin() );
+
+		typedef vector_unit<float,4> vu;
+		typedef vu::vec_t vec_t;
+		//steps = 0;
+
+		vec_t reflex_factor = vu::set1(1.0);
+		for( int i = 0; i < steps; ++i ) {
+			//for( auto it = pairs_.begin(); it != pairs_.end(); ++it, ++ff_it ) {
+
+
+			for( size_t j = 0; j < ff2s_.size(); ++j ) {
+
+				const size_t s = ff2s_[j].size();
+				vec_t rad = vu::set1(0);
+
+				const vec3f cd = planes_[j].col_diff();
+				const vec_t col_diff = vu::set( 0, cd.b, cd.g, cd.r );
+
+
+
+				for( size_t k = 0; k < s; ++k ) {
+					size_t target = ff2_target_[j][k];
+					//rad_rgb += (col_diff * e_rad_rgb_[target]) * ff2s_[j][k];
+
+					const vec_t ff = vu::set1( ff2s_[j][k] );
+
+					rad = vu::add( rad, vu::mul( vu::mul( col_diff, vu::load( (float*) e_rad_sse_(target))), ff ));
+
+				}
+
+				vu::store( vu::add( vu::load((float*)emit_sse_(j)), vu::mul(rad, reflex_factor)), (float*)e_rad2_sse_(j));
+//				std::cout << "col: " << e_rad2_sse_[j].r << " " << cd.r <<  "\n";
+				//e_rad2_rgb_[j] = emit_rgb_[j] + rad_rgb;// * reflex_factor;
+
+			}
+
+
+			e_rad_sse_.swap(e_rad2_sse_);
+			//e_rad_sse_ = e_rad2_sse_;
+
+
+		}
+
+		//e_rad_rgb_.assign( e_rad_sse_.begin(), e_rad_sse_.end() );
+
+		for( size_t i = 0; i < e_rad_sse_.size(); ++i ) {
+			e_rad_rgb_[i].r = e_rad_sse_[i].r;
+			e_rad_rgb_[i].g = e_rad_sse_[i].g;
+			e_rad_rgb_[i].b = e_rad_sse_[i].b;
+		}
+
 	}
 
 	void do_radiosity( int steps = 10 ) {
 
-//			std::copy(emit_rgb_.begin(), emit_rgb_.end(), e_rad_rgb_.begin());
-			std::fill(e_rad_rgb_.begin(), e_rad_rgb_.end(), vec3f(0.0, 0.0, 0.0));
+		if( true ) {
+			do_radiosity_sse(steps);
+			return;
+		}
+
+			std::copy(emit_rgb_.begin(), emit_rgb_.end(), e_rad_rgb_.begin());
+//			std::fill(e_rad_rgb_.begin(), e_rad_rgb_.end(), vec3f(0.0, 0.0, 0.0));
 			std::fill(e_rad2_rgb_.begin(), e_rad2_rgb_.end(), vec3f(0.0, 0.0, 0.0));
 
 
 
 
-			const float reflex_factor = 1.0;
+			//const float reflex_factor = 1.0;
 
 
 
@@ -660,13 +1040,13 @@ public:
 						rad_rgb += (col_diff * e_rad_rgb_[target]) * ff2s_[j][k];
 					}
 
-					e_rad2_rgb_[j] = emit_rgb_[j] + rad_rgb * reflex_factor;
+					e_rad2_rgb_[j] = emit_rgb_[j] + rad_rgb;// * reflex_factor;
 
 				}
 
 
 				e_rad_rgb_.swap(e_rad2_rgb_);
-
+				//e_rad_rgb_ = e_rad2_rgb_;
 
 			}
 
@@ -747,6 +1127,24 @@ public:
 
 
 private:
+	inline bool normal_cull( const plane &pl1, const plane &pl2 ) {
+		const plane::dir_type d1 = pl1.dir();
+		const plane::dir_type d2 = pl2.dir();
+
+		const vec3i &p1 = pl1.pos();
+		const vec3i &p2 = pl2.pos();
+
+		return p1 == p2 ||
+				d1 == d2 ||
+				(d1 == plane::dir_xy_n && d2 == plane::dir_xy_p && p1.z < p2.z) ||
+				(d1 == plane::dir_xy_p && d2 == plane::dir_xy_n && p1.z > p2.z) ||
+				(d1 == plane::dir_yz_n && d2 == plane::dir_yz_p && p1.x < p2.x) ||
+				(d1 == plane::dir_yz_p && d2 == plane::dir_yz_n && p1.x > p2.x) ||
+				(d1 == plane::dir_zx_n && d2 == plane::dir_zx_p && p1.y < p2.y) ||
+				(d1 == plane::dir_zx_p && d2 == plane::dir_zx_n && p1.y > p2.y);
+
+	}
+
 	void setup_formfactors() {
 
 //		std::ofstream os( "ff.txt" );
@@ -760,6 +1158,7 @@ private:
 
 		std::vector<float> ff_tmp;
 		std::vector<int> target_tmp;
+		size_t num_ff = 0;
 
 		for( size_t i = 0; i < planes_.size(); ++i ) {
 			vec3i p1 = planes_.at(i).pos();
@@ -770,23 +1169,28 @@ private:
 
 			size_t minj = size_t(-1);
 			size_t maxj = 0;
-			size_t num_ff = 0;
+
 
 
 			ff_tmp.clear();
 			target_tmp.clear();
 
-			for( size_t j = 0; j < planes_.size(); ++j ) {
+			for( size_t j = 0; j < i /*planes_.size()*/; ++j ) {
 
 	//            		std::cerr << "i: " << i << " " << j << "\n";
 
 
-				if( planes_[i].normal_cull(planes_[j])) {
-					os << "0 ";
+				if( normal_cull( planes_[i], planes_[j] )) {
+//					os << "0 ";
 					continue;
 				}
 
-				vec3i p2 = planes_[j].pos();
+//				if( planes_[i].normal_cull(planes_[j])) {
+//					os << "0 ";
+//					continue;
+//				}
+
+				const vec3i &p2 = planes_[j].pos();
 
 
 				const vec3f &norm2 = planes_[j].norm();
@@ -794,10 +1198,7 @@ private:
 
 				float d2 = dist_sqr( p1f, p2f );
 
-				if( d2 < 0.0001 || util::occluded( p1 + norm1, p2 + norm2, solid_ )) {
-					os << "0 ";
-					continue;
-				}
+
 
 				bool dist_cull = false;
 
@@ -813,7 +1214,7 @@ private:
 					float ff2 = std::max( 0.0f, norm2.dot(dn));
 
 					ff = ff1 * ff2;
-					ff = std::max( 0.0f, ff );
+//					ff = std::max( 0.0f, ff );
 	//						std::cout << "ff: " << ff << "\n";
 					//dist_cull = ff < 0.01;
 				}
@@ -832,6 +1233,11 @@ private:
 
 				if( !dist_cull && i != j ) {
 
+					if( util::occluded( p1 + norm1, p2 + norm2, solid_ )) {
+					//					os << "0 ";
+						continue;
+					}
+
 //					pairs_.push_back(std::make_pair(i,j));
 //
 //
@@ -839,10 +1245,14 @@ private:
 					ff_tmp.push_back(ff);
 					target_tmp.push_back(j);
 
-					minj = std::min( minj, j );
-					maxj = std::max( maxj, j );
+					// j < i => ff2s_[j] is already initialized.
+					ff2s_[j].push_back(ff);
+					ff2_target_[j].push_back(i);
+
+//					minj = std::min( minj, j );
+//					maxj = std::max( maxj, j );
 					++num_ff;
-					os << "1 ";
+//					os << "1 ";
 				} else {
 					os << "0 ";
 				}
@@ -862,6 +1272,14 @@ private:
 		e_rad_rgb_.resize( planes_.size() );
 		e_rad2_rgb_.resize( planes_.size() );
 
+		emit_sse_.resize( planes_.size() );
+		e_rad_sse_.resize( planes_.size() );
+		e_rad2_sse_.resize( planes_.size() );
+
+
+		std::cout << "num interactions (half): " << num_ff << "\n";
+
+//		throw std::runtime_error("xxx");
 
 //		e_emit.resize(patches_.size());
 //		e_rad.resize(patches_.size());
@@ -880,7 +1298,13 @@ private:
 	std::vector<vec3f> emit_rgb_;
 	std::vector<vec3f> e_rad_rgb_;
 	std::vector<vec3f> e_rad2_rgb_;
-	std::vector<vec3f> col_diff_;
+
+
+	aligned_buffer<col3f_sse> emit_sse_;
+	aligned_buffer<col3f_sse> e_rad_sse_;
+	aligned_buffer<col3f_sse> e_rad2_sse_;
+
+
 
 	std::vector<std::vector<float> > ff2s_;
 	std::vector<std::vector<int> > ff2_target_;
@@ -1006,11 +1430,13 @@ public:
 	}
 
 	ortho() :
-	 pump_factor_(2){
+	 pump_factor_(4){
 
 		if( true )
 		{
 			std::ifstream is( "cryistal-castle-hidden-ramp.txt" );
+//			std::ifstream is( "cryistal-castle-tree-wave.txt" );
+
 			assert(is.good());
 			height_ = pump(load_crystal( is ), pump_factor_);
 		} else {
@@ -1145,6 +1571,9 @@ public:
 
 
 		auto t_old = CL_System::get_microseconds();
+		bool light_on = true;
+		bool light_button_down = false;
+
 		while( true ) {
 
 			//cube c(x1, 0, y1);
@@ -1170,7 +1599,14 @@ public:
 			if(  keyboard.get_keycode(CL_KEY_DOWN) ) {
 				light_pos.z -= 1;
 			}
-
+			if( keyboard.get_keycode(CL_KEY_L )) {
+				if( !light_button_down ) {
+					light_on = !light_on;
+				}
+				light_button_down = true;
+			} else {
+				light_button_down = false;
+			}
 
 			glEnable(GL_CULL_FACE);
 			glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
@@ -1190,8 +1626,11 @@ public:
 //			light_planes(vec3i(light_x, 10, 10 ));
 			ls.reset_emit();
 			//ls.render_light(vec3f( 40, 50.0, light_x ), vec3f(1.0, 1.0, 1.0 ));
-			ls.render_light(light_pos, vec3f(1.0, 1.0, 1.0 ));
-		//	ls.render_emit_patches();
+			if( light_on ) {
+				ls.render_light(light_pos, vec3f(1.0, 0.8, 0.6 ));
+			}
+			ls.post();
+			//ls.render_emit_patches();
 
 			steps = 5;
 			ls.do_radiosity( steps );
