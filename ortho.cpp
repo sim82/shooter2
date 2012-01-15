@@ -796,7 +796,7 @@ public:
 	}
 
 
-	plane( dir_type d, const vec3f &base_pos, const vec3i &pos, float energy )
+	plane( dir_type d, const vec3f &base_pos, const vec3i &pos, float scale, float energy )
 	  : dir_(d),
 	    pos_(pos),
 	    energy_(energy),
@@ -813,10 +813,10 @@ public:
 
 		vec3f norm2 = normal(d) * 0.5;
 
-		vec3f trans_pos = base_pos + pos;
+		vec3f trans_pos = (base_pos + pos);
 
 		for( size_t i = 0; i < 4; ++i ) {
-			verts_[i] = trans_pos + p0 * vg0[i] + p1 * vg1[i] + norm2;
+			verts_[i] = (trans_pos + p0 * vg0[i] + p1 * vg1[i] + norm2) * scale;
 
 //			std::cout << "vert: " << i << " " << verts_[i] << " " << vg0[i] << "\n";
 		}
@@ -879,7 +879,44 @@ public:
 	  : planes_(planes), solid_(solid)
 	{
 
-		setup_formfactors();
+
+		emit_rgb_.resize( planes_.size() );
+		e_rad_rgb_.resize( planes_.size() );
+		e_rad2_rgb_.resize( planes_.size() );
+
+		emit_sse_.resize( planes_.size() );
+		e_rad_sse_.resize( planes_.size() );
+		e_rad2_sse_.resize( planes_.size() );
+
+
+		if( false ) {
+			setup_formfactors();
+			{
+				std::ofstream os( "ff.bin" );
+
+
+				write_formfactors(os);
+
+			}
+		} else {
+			try
+			{
+
+
+				std::ifstream is( "ff.bin" );
+				if( !is.good() ) {
+					throw std::runtime_error( "cannot open ff.bin");
+				}
+				read_formfactors(is);
+
+			} catch( std::runtime_error x ) {
+				std::cerr << x.what() << "\n";
+				std::cerr << "error while reading ff.bin. regenerating\n";
+				setup_formfactors();
+			}
+		}
+
+
 
 	}
 
@@ -951,8 +988,8 @@ public:
 
 	}
 
-	void do_radiosity_sse( int steps = 10 ) {
-		steps = 1;
+	void do_radiosity_sse( int steps = 10, float min_ff = 0.0 ) {
+
 //		std::fill(e_rad_sse_.begin(), e_rad_sse_.end(), vec3f(0.0, 0.0, 0.0));
 //		std::fill(e_rad2_sse_.begin(), e_rad2_sse_.end(), vec3f(0.0, 0.0, 0.0));
 
@@ -980,6 +1017,10 @@ public:
 				for( size_t k = 0; k < s; ++k ) {
 					size_t target = ff2_target_[j][k];
 					//rad_rgb += (col_diff * e_rad_rgb_[target]) * ff2s_[j][k];
+
+					if( false && ff2s_[j][k] < min_ff ) {
+						continue;
+					}
 
 					const vec_t ff = vu::set1( ff2s_[j][k] );
 
@@ -1010,10 +1051,10 @@ public:
 
 	}
 
-	void do_radiosity( int steps = 10 ) {
+	void do_radiosity( int steps = 10,  float min_ff = 0.0 ) {
 
 		if( true ) {
-			do_radiosity_sse(steps);
+			do_radiosity_sse(steps, min_ff);
 			return;
 		}
 
@@ -1145,6 +1186,61 @@ private:
 
 	}
 
+	void write_formfactors( std::ostream &os ) {
+		size_t size1 = ff2s_.size();
+
+		os.write((char*) &size1, sizeof(size_t));
+		for( size_t i = 0; i < size1; ++i ) {
+			size_t size2 = ff2s_[i].size();
+			os.write((char*) &size2, sizeof(size_t));
+
+			os.write( (char*) ff2s_[i].data(), size2 * sizeof(float));
+			os.write( (char*) ff2_target_[i].data(), size2 * sizeof(int));
+		}
+
+	}
+
+	void read_formfactors( std::istream &is ) {
+		size_t size1;
+		is.read( (char *) &size1, sizeof( size_t ));
+
+		if( size1 != planes_.size() ) {
+			throw std::runtime_error( "cannot read form factors: size1 != planes_.size()");
+		}
+
+
+		std::vector<std::vector<float> > ff2s(size1);
+		std::vector<std::vector<int> > ff2_target(size1);
+
+
+		for( size_t i = 0; i < size1; ++i ) {
+			size_t size2;
+
+			is.read( (char *) &size2, sizeof( size_t ));
+
+			if( size2 > planes_.size() ) {
+				throw std::runtime_error( "cannot read form factors: size2 != planes_.size()");
+			}
+
+			ff2s[i].resize(size2);
+			ff2_target[i].resize(size2);
+
+			is.read( (char*) ff2s[i].data(), size2 * sizeof(float));
+			is.read( (char*) ff2_target[i].data(), size2 * sizeof(int));
+
+			std::for_each(ff2_target[i].begin(), ff2_target[i].end(), [&](int t) {
+				if( size_t(t) >= planes_.size() ) {
+					throw std::runtime_error( "cannot read form factors: target out of range");
+				}
+			});
+		}
+
+		// exception safe!
+		ff2s_.swap( ff2s );
+		ff2_target_.swap( ff2_target );
+
+	}
+
 	void setup_formfactors() {
 
 //		std::ofstream os( "ff.txt" );
@@ -1268,13 +1364,7 @@ private:
 
 
 
-		emit_rgb_.resize( planes_.size() );
-		e_rad_rgb_.resize( planes_.size() );
-		e_rad2_rgb_.resize( planes_.size() );
 
-		emit_sse_.resize( planes_.size() );
-		e_rad_sse_.resize( planes_.size() );
-		e_rad2_sse_.resize( planes_.size() );
 
 
 		std::cout << "num interactions (half): " << num_ff << "\n";
@@ -1308,6 +1398,160 @@ private:
 
 	std::vector<std::vector<float> > ff2s_;
 	std::vector<std::vector<int> > ff2_target_;
+
+};
+
+
+class input_mapper {
+public:
+
+	void add_mapping( int keycode, bool *indicator ) {
+		mappings_.push_back(mapping( keycode, indicator ));
+	}
+
+	void input( const CL_InputDevice &dev ) {
+		for( const mapping &m : mappings_ ) {
+			*m.indicator_ = dev.get_keycode(m.keycode_);
+		}
+	}
+
+private:
+
+	struct mapping {
+		int keycode_;
+		bool *indicator_;
+
+		mapping( int keycode, bool *indicator ) : keycode_(keycode), indicator_(indicator) {
+			*indicator_ = false;
+		}
+
+	};
+
+	std::vector<mapping> mappings_;
+
+};
+
+class mouse_mapper {
+public:
+	mouse_mapper() : valid_(false), delta_x_(0), delta_y_(0) {}
+
+	void input( const CL_InputDevice &mouse ) {
+		int new_x = mouse.get_x();
+		int new_y = mouse.get_y();
+
+		if( valid_ ) {
+			delta_x_ = new_x - old_x_;
+			delta_y_ = new_y - old_y_;
+		}
+
+		old_x_ = new_x;
+		old_y_ = new_y;
+		valid_ = true;
+	}
+
+	float delta_x() const {
+		return delta_x_;
+	}
+
+	float delta_y() const {
+		return delta_y_;
+	}
+
+private:
+
+	bool valid_;
+	int old_x_;
+	int old_y_;
+
+	float delta_x_;
+	float delta_y_;
+};
+
+class player {
+public:
+
+	player() {
+		input_mapper_.add_mapping( CL_KEY_W, &i_forward_);
+		input_mapper_.add_mapping( CL_KEY_S, &i_backward_);
+		input_mapper_.add_mapping( CL_KEY_A, &i_left_);
+		input_mapper_.add_mapping( CL_KEY_D, &i_right_);
+
+		pos_.x = 0;
+		pos_.y = 0;
+		pos_.z = 0;
+
+		rot_y_ = 0.0;
+		rot_x_ = 0.0;
+	}
+
+	void input( const CL_InputDevice &keyboard, const CL_InputDevice &mouse ) {
+		input_mapper_.input(keyboard);
+
+		mouse_mapper_.input(mouse);
+	}
+
+	void frame( double time, double dt ) {
+
+		rot_y_ -= mouse_mapper_.delta_x(); // NOTE: rotations are CCW, so clockwise head rotation (to the right) means negative mouse delta
+		rot_x_ -= mouse_mapper_.delta_y();
+
+		CL_Mat4f rot = CL_Mat4f::rotate(CL_Angle(rot_x_, cl_degrees), CL_Angle(rot_y_, cl_degrees), CL_Angle(), cl_YXZ );
+
+
+
+
+
+		CL_Vec4f trans_vec(0.0, 0.0, 0.0, 1.0);
+
+		const float move_speed = 4.0; // 4 m/s
+
+		if( i_forward_ ) {
+			trans_vec.z -= move_speed * dt; // NOTE: translation is in 'player head coordinate system' so forward is -z
+		}
+		if( i_backward_ ) {
+			trans_vec.z += move_speed * dt;
+		}
+		if( i_left_ ) {
+			trans_vec.x -= move_speed * dt;
+		}
+		if( i_right_ ) {
+			trans_vec.x += move_speed * dt;
+		}
+
+		CL_Mat4f trans = CL_Mat4f::translate(trans_vec.x, trans_vec.y, trans_vec.z );
+
+		//CL_Mat4f mat = trans * rot;
+
+		trans_vec = trans * rot * trans_vec;
+
+
+		pos_.x += trans_vec.x;
+		pos_.y += trans_vec.y;
+		pos_.z += trans_vec.z;
+
+	}
+	const vec3f &pos() const {
+		return pos_;
+	}
+	float rot_x() const {
+		return rot_x_;
+	}
+	float rot_y() const {
+		return rot_y_;
+	}
+
+private:
+	bool i_forward_;
+	bool i_backward_;
+	bool i_left_;
+	bool i_right_;
+
+	input_mapper input_mapper_;
+	mouse_mapper mouse_mapper_;
+
+	vec3f pos_;
+	float rot_y_;
+	float rot_x_;
 
 };
 
@@ -1475,26 +1719,12 @@ public:
 
 		gc.set_active();
 		glMatrixMode(GL_PROJECTION);						//hello
-		//		gluPerspective(45, //view angle
-		//					1.0,	//aspect ratio
-		//					10.0, //near clip
-		//					200.0);//far clip
-#if 0
-		GLfloat matrix[16];
-		glhPerspectivef2(matrix, 45, 1.0, 10.0, 200.0 );
 
-		glLoadMatrixf( matrix );
-#else
-//		CL_Mat4f proj = CL_Mat4f::perspective( 45, 1.0, 10.0, 200.0 );
-		//CL_Mat4f proj = CL_Mat4f::ortho( -10 * pump_factor_, 10 * pump_factor_, -7 * pump_factor_, 7 * pump_factor_, 0, 200 );
 
-		std::cout << "pump: " << pump_factor_ << "\n";
-		CL_Mat4f proj = CL_Mat4f::ortho( -20.0 * pump_factor_, 20.0 * pump_factor_, -15.0 * pump_factor_, 15.0 * pump_factor_, 0, 200 );
+		CL_Mat4f proj = CL_Mat4f::perspective( 60, 1.5, 2, 200 );
+//		CL_Mat4f proj = CL_Mat4f::ortho( -20.0 * pump_factor_, 20.0 * pump_factor_, -15.0 * pump_factor_, 15.0 * pump_factor_, 0, 200 );
 		//CL_Mat4f proj = CL_Mat4f::ortho( -40, 40, -30, 30, 0, 200 );
 
-		std::cout << "matrix: ";
-		std::copy( proj.matrix, proj.matrix + 16, std::ostream_iterator<float>(std::cout, " ") );
-		std::cout << "\n";
 
 		glLoadMatrixf( proj.matrix );
 
@@ -1517,22 +1747,14 @@ public:
 
 		std::array<texel,64 * 64> tex_data;
 
-		//std::generate( tex_data.begin(), tex_data.end(), std::rand );
-//		for( int i = 0; i < 64; ++i ) {
-//			for( int j = 0; j < 64; ++j ) {
-//
-//
-//			}
-//		}
-//		glEnable(GL_TEXTURE_2D);
 		glLightModelf(GL_LIGHT_MODEL_LOCAL_VIEWER, 0.0);
-		glGenTextures(1, &texName);
-		glBindTexture(GL_TEXTURE_2D, texName);
-		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
-		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
-		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
-		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
-		glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, 64, 64, 0, GL_RGBA, GL_UNSIGNED_BYTE, tex_data.data());
+//		glGenTextures(1, &texName);
+//		glBindTexture(GL_TEXTURE_2D, texName);
+//		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
+//		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
+//		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+//		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+//		glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, 64, 64, 0, GL_RGBA, GL_UNSIGNED_BYTE, tex_data.data());
 
 
 //		gc.set_map_mode(cl_user_projection);
@@ -1541,11 +1763,71 @@ public:
 //		gc.flush_batcher();
 //		glMatrixMode(GL_PROJECTION);
 
-#endif
+
 		glMatrixMode(GL_MODELVIEW);
 
 
 		glEnable(GL_DEPTH_TEST);
+	}
+
+	void setup_perspective( const player &camera ) {
+		glMatrixMode(GL_PROJECTION);						//hello
+
+		{
+			CL_Mat4f proj = CL_Mat4f::perspective( 60, 1.5, 0.2, 50 );
+	//		CL_Mat4f proj = CL_Mat4f::ortho( -20.0 * pump_factor_, 20.0 * pump_factor_, -15.0 * pump_factor_, 15.0 * pump_factor_, 0, 200 );
+			//CL_Mat4f proj = CL_Mat4f::ortho( -40, 40, -30, 30, 0, 200 );
+
+
+			glLoadMatrixf( proj.matrix );
+		}
+
+		//			std::cout << "pos: " << player_pos << "\n";
+
+		glMatrixMode( GL_MODELVIEW );
+		{
+			const vec3f &player_pos = camera.pos();
+			CL_Mat4f proj = CL_Mat4f::translate(-player_pos.x, -player_pos.y, -player_pos.z) * CL_Mat4f::rotate(CL_Angle(-camera.rot_x(), cl_degrees),CL_Angle(-camera.rot_y(),cl_degrees),CL_Angle(), cl_XYZ);
+			glLoadMatrixf(proj.matrix);
+		}
+	}
+
+	void setup_ortho() {
+		glMatrixMode(GL_PROJECTION);						//hello
+
+		{
+
+			CL_Mat4f proj = CL_Mat4f::ortho( -20.0, 20.0, -15.0, 15.0, 0, 200 );
+			//CL_Mat4f proj = CL_Mat4f::ortho( -40, 40, -30, 30, 0, 200 );
+
+
+			glLoadMatrixf( proj.matrix );
+		}
+
+		//			std::cout << "pos: " << player_pos << "\n";
+
+		glMatrixMode( GL_MODELVIEW );
+		{
+
+			CL_Mat4f proj = CL_Mat4f::look_at( 10, 10, 10, 0, 0, 0, 0.0, 1.0, 0.0 );
+//			CL_Mat4f proj = CL_Mat4f::translate(-player_pos.x, -player_pos.y, -player_pos.z) * CL_Mat4f::rotate(CL_Angle(-p1.rot_x(), cl_degrees),CL_Angle(-p1.rot_y(),cl_degrees),CL_Angle(), cl_XYZ);
+			glLoadMatrixf(proj.matrix);
+		}
+
+	}
+
+	void render_quads() {
+
+		glBegin(GL_QUADS);
+		for( size_t i = 0; i < planes_.size(); ++i ) {
+			plane &p = planes_[i];
+
+//			p.energy_rgb(ls.rad_rgb(i));
+
+			p.render();
+		}
+		glEnd();
+
 	}
 
 	void start() {
@@ -1573,6 +1855,10 @@ public:
 		auto t_old = CL_System::get_microseconds();
 		bool light_on = true;
 		bool light_button_down = false;
+		double delta_t = 0.01;
+		player p1;
+
+//		float min_ff = 5e-5;
 
 		while( true ) {
 
@@ -1580,13 +1866,23 @@ public:
 
 			CL_GraphicContext gc = wnd_.get_gc();
 			CL_InputDevice &keyboard = wnd_.get_ic().get_keyboard();
+			CL_InputDevice &mouse = wnd_.get_ic().get_mouse();
 
-			if( keyboard.get_keycode(CL_KEY_S) ) {
-				roty += 1;
-			}
-			if(  keyboard.get_keycode(CL_KEY_A) ) {
-				roty -= 1;
-			}
+//			if( keyboard.get_keycode(CL_KEY_I) ) {
+//			//	roty += 1;
+//
+//				min_ff += 5e-6;
+//			}
+//			if(  keyboard.get_keycode(CL_KEY_K) ) {
+//				//roty -= 1;
+//				min_ff -= 5e-6;
+//			}
+//
+//			std::cout << "min ff: " << min_ff << "\n";
+
+			p1.input(keyboard, mouse);
+			p1.frame(t_old * 1.0e-3, delta_t);
+
 			if( keyboard.get_keycode(CL_KEY_LEFT) ) {
 				light_pos.x += 1;
 			}
@@ -1608,14 +1904,15 @@ public:
 				light_button_down = false;
 			}
 
+
+
 			glEnable(GL_CULL_FACE);
 			glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
-			glPushMatrix();
 
 
-			glTranslatef(0,0,-100);
-			glRotatef(45,1,0,0);
-			glRotatef(roty,0,1,0);
+//			glTranslatef(0,0,-100);
+//			glRotatef(45,1,0,0);
+//			glRotatef(roty,0,1,0);
 
 
 			if( light_x > 60 || light_x < -60 ) {
@@ -1627,39 +1924,47 @@ public:
 			ls.reset_emit();
 			//ls.render_light(vec3f( 40, 50.0, light_x ), vec3f(1.0, 1.0, 1.0 ));
 			if( light_on ) {
-				ls.render_light(light_pos, vec3f(1.0, 0.8, 0.6 ));
+				//ls.render_light(light_pos, vec3f(1.0, 0.8, 0.6 ));
+
+				//vec3f light_pos( p1.pos)
+
+//				vec3f light_pos = (p1.pos()* pump_factor_) - base_pos_;
+				vec3f light_weird = (light_pos * pump_factor_) - base_pos_;
+				ls.render_light( light_weird, vec3f(1.0, 0.8, 0.6 ));
 			}
 			ls.post();
+
+			// stupid: transfer rgb energy fomr light scene to planes
+			for( size_t i = 0; i < planes_.size(); ++i ) {
+				plane &p = planes_[i];
+				p.energy_rgb(ls.rad_rgb(i));
+			}
+
 			//ls.render_emit_patches();
 
-			steps = 5;
+			steps = 1;
 			ls.do_radiosity( steps );
-
-//			std::cout << "steps: " << steps;
-//
-//			++steps;
-//			if( steps > 20 ) {
-//				steps = 1;
-//			}
 
 			light_x += light_xd;
 
-//			roty += 1;
-//			roty = 45;
 
-			glBegin(GL_QUADS);
-			for( size_t i = 0; i < planes_.size(); ++i ) {
-				plane &p = planes_[i];
+//			glPushMatrix();
 
-				p.energy_rgb(ls.rad_rgb(i));
+		//CL_Mat4f proj = CL_Mat4f::look_at( 20, 20, 20, 0, 0, 0, 0.0, 1.0, 0.0 );
 
-				p.render();
-			}
-			glEnd();
+			//setup_perspective( p1 );
+			setup_ortho();
+
+			int ortho_width = 320;
+			int ortho_heigth = 200;
+			glViewport( gc.get_width() - ortho_width, gc.get_height() - ortho_heigth, ortho_width, ortho_heigth );
+			render_quads();
+//			glPopMatrix();
+			setup_perspective(p1);
+			glViewport( 0, 0, gc.get_width(), gc.get_height());
+			render_quads();
 
 
-
-			glPopMatrix();
 
 			wnd_.flip();
 
@@ -1667,8 +1972,13 @@ public:
 
 			auto t = CL_System::get_microseconds();
 
-			std::cout << "fps: " << 1e6 / (t - t_old) << "\n";
+//			std::cout << "fps: " << 1e6 / (t - t_old) << "\n";
+			delta_t = (t - t_old) * 1.0e-6;
 			t_old = t;
+
+
+
+//			std::cout << "delta: " << delta_t << "\n";
 
 //			CL_System::sleep( 1000 / 60. );
 //			getchar();
@@ -1719,6 +2029,9 @@ private:
 		solid_ = bitmap3d( size_x, size_y, size_z );
 
 		vec3f base_pos( -10.5 * pump_factor_, -10.5, -10.5 * pump_factor_);
+		//vec3f base_pos;
+		base_pos_ = base_pos;
+
 
 		for( int y = 0; y < size_y; ++y ) {
 			for( size_t z = 0; z < height_.size(); ++z ) {
@@ -1738,6 +2051,7 @@ private:
 		const auto &solidc = solid_;
 
 		vec3i light_pos( 10, 10, 10 );
+		float scale = 1.0 / pump_factor_;
 
 		for( int y = 0; y < size_y; ++y ) {
 			for( size_t z = 0; z < height_.size(); ++z ) {
@@ -1748,20 +2062,22 @@ private:
 
 						float energy = occ ? 0.2 : 1.0;
 
+
+
 						if( !solidc(x,y,z+1)) {
-							planes_.push_back( plane( plane::dir_xy_p, base_pos, vec3i( x, y, z ), energy));
+							planes_.push_back( plane( plane::dir_xy_p, base_pos, vec3i( x, y, z ), scale, energy));
 						}
 						if( !solidc(x,y,z-1)) {
-							planes_.push_back( plane( plane::dir_xy_n, base_pos, vec3i( x, y, z ), energy));
+							planes_.push_back( plane( plane::dir_xy_n, base_pos, vec3i( x, y, z ), scale, energy));
 						}
 						if( !solidc(x+1,y,z)) {
-							planes_.push_back( plane( plane::dir_yz_p, base_pos, vec3i( x, y, z ), energy));
+							planes_.push_back( plane( plane::dir_yz_p, base_pos, vec3i( x, y, z ), scale, energy));
 						}
 						if( !solidc(x-1,y,z)) {
-							planes_.push_back( plane( plane::dir_yz_n, base_pos, vec3i( x, y, z ), energy));
+							planes_.push_back( plane( plane::dir_yz_n, base_pos, vec3i( x, y, z ), scale, energy));
 						}
 						if( !solidc(x,y+1,z)) {
-							planes_.push_back( plane( plane::dir_zx_p, base_pos, vec3i( x, y, z ), energy));
+							planes_.push_back( plane( plane::dir_zx_p, base_pos, vec3i( x, y, z ), scale, energy));
 						}
 
 
@@ -1831,7 +2147,7 @@ private:
 	bitmap3d solid_;
 
 	const size_t pump_factor_;
-
+	vec3f base_pos_;
 };
 
 
