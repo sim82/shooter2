@@ -18,11 +18,14 @@
 #include <ClanLib/gl.h>
 #include <ClanLib/core.h>
 
+#include "cycle.h"
 #include <fstream>
 #include <array>
 #include <algorithm>
 #include <functional>
+#include <memory>
 #include <stdexcept>
+#include <thread>
 #include <boost/dynamic_bitset.hpp>
 #include "aligned_buffer.h"
 #include "vec_unit.h"
@@ -59,6 +62,14 @@ typename vec_t::datatype dist_sqr( const vec_t &v1, const vec_t &v2 ) {
 	vec_t vd = v1 - v2;
 
 	return vd.dot(vd);
+}
+
+
+
+template<typename T, typename ...Args>
+std::unique_ptr<T> make_unique( Args&& ...args )
+{
+    return std::unique_ptr<T>( new T( std::forward<Args>(args)... ) );
 }
 
 
@@ -873,6 +884,321 @@ private:
 };
 
 
+class rad_core {
+public:
+	virtual void set_emit( const std::vector<vec3f> &emit ) = 0;
+	virtual bool update() = 0;
+	virtual void copy( std::vector<vec3f> *out ) = 0;
+};
+
+
+class rad_core_sse : public rad_core {
+public:
+	rad_core_sse( const std::vector<plane> &planes, const std::vector<std::vector<float> > &ffs, const std::vector<std::vector<int> > &ff_target )
+	  : emit_( planes.size() ), rad_( planes.size() ), rad2_( planes.size() ),
+	    ffs_(ffs), ff_target_(ff_target),
+	    planes_(planes)
+	{
+
+
+	}
+
+	virtual void set_emit( const std::vector<vec3f> &emit ) {
+		assert( emit_.size() == emit.size() );
+
+		emit_.assign( std::begin(emit), std::end(emit));
+	}
+
+	virtual bool update() {
+		do_radiosity_sse();
+
+		return true;
+	}
+
+	virtual void copy( std::vector<vec3f> *out ) {
+		for( size_t i = 0; i < rad_.size(); ++i ) {
+			(*out)[i].r = rad_[i].r;
+			(*out)[i].g = rad_[i].g;
+			(*out)[i].b = rad_[i].b;
+		}
+	}
+
+
+private:
+
+	void do_radiosity_sse() {
+		const int steps = 1;
+		const float min_ff = 0;
+//		std::fill(e_rad_sse_.begin(), e_rad_sse_.end(), vec3f(0.0, 0.0, 0.0));
+//		std::fill(e_rad2_sse_.begin(), e_rad2_sse_.end(), vec3f(0.0, 0.0, 0.0));
+
+		//std::copy( emit_sse_.begin(), emit_sse_.end(), e_rad_sse_.begin() );
+
+		typedef vector_unit<float,4> vu;
+		typedef vu::vec_t vec_t;
+		//steps = 0;
+
+		vec_t reflex_factor = vu::set1(1.0);
+		for( int i = 0; i < steps; ++i ) {
+			//for( auto it = pairs_.begin(); it != pairs_.end(); ++it, ++ff_it ) {
+
+
+			for( size_t j = 0; j < ffs_.size(); ++j ) {
+
+				const size_t s = ffs_[j].size();
+				vec_t rad = vu::set1(0);
+
+				const vec3f cd = planes_[j].col_diff();
+				const vec_t col_diff = vu::set( 0, cd.b, cd.g, cd.r );
+
+
+
+				for( size_t k = 0; k < s; ++k ) {
+					size_t target = ff_target_[j][k];
+					//rad_rgb += (col_diff * e_rad_rgb_[target]) * ff2s_[j][k];
+
+					if( false && ffs_[j][k] < min_ff ) {
+						continue;
+					}
+
+					const vec_t ff = vu::set1( ffs_[j][k] );
+
+					rad = vu::add( rad, vu::mul( vu::mul( col_diff, vu::load( (float*) rad_(target))), ff ));
+
+				}
+
+				vu::store( vu::add( vu::load((float*)emit_(j)), vu::mul(rad, reflex_factor)), (float*)rad2_(j));
+//				std::cout << "col: " << rad2_[j].r << " " << cd.r <<  "\n";
+				//e_rad2_rgb_[j] = emit_rgb_[j] + rad_rgb;// * reflex_factor;
+
+			}
+
+
+			rad_.swap(rad2_);
+			//rad_ = rad2__;
+
+
+		}
+
+		//e_rad_rgb_.assign( e_rad_sse_.begin(), e_rad_sse_.end() );
+
+
+
+	}
+
+
+	aligned_buffer<col3f_sse> emit_;
+	aligned_buffer<col3f_sse> rad_;
+	aligned_buffer<col3f_sse> rad2_;
+	const std::vector<std::vector<float> > &ffs_;
+	const std::vector<std::vector<int> > &ff_target_;
+	const std::vector<plane> &planes_;
+
+};
+
+class tick_timer {
+public:
+	tick_timer() :t1_(getticks()  ){}
+
+	double elapsed() {
+		return ::elapsed( getticks(), t1_ );
+	}
+
+private:
+	ticks t1_;
+};
+
+class rad_core_threaded: public rad_core {
+public:
+	class worker {
+
+	};
+
+
+	rad_core_threaded( const std::vector<plane> &planes, const std::vector<std::vector<float> > &ffs, const std::vector<std::vector<int> > &ff_target )
+	  : rad_is_new_(false),
+	    emit_is_new_(false),
+		emit_new_(planes.size()), emit_( planes.size() ), rad_( planes.size() ), rad2_( planes.size() ),
+	    ffs_(ffs), ff_target_(ff_target),
+	    planes_(planes)
+	{
+
+		if( true ) {
+			threads_.push_back( std::thread( [&]() { work(0, planes_.size()); }) );
+
+//			thread0_ = std::thread( [&]() { work(0, planes_.size()/4);
+//			});
+		} else {
+			const size_t num_planes = planes_.size();
+			const size_t num_threads = 3;
+			for( size_t i = 0; i < num_threads; ++i ) {
+				threads_.push_back( std::thread( [&]() { work( num_planes / num_threads * i, num_planes / num_threads * (i+1));
+				}));
+			}
+
+//			thread0_ = std::thread( [&]() { work(0, planes_.size()/4);
+//			});
+//			thread1_ = std::thread( [&]() { work(planes_.size()/4, planes_.size()/4 * 2);
+//			});
+//			thread2_ = std::thread( [&]() { work(planes_.size()/4 * 2, planes_.size()/4 * 3);
+//			});
+//			thread3_ = std::thread( [&]() { work(planes_.size()/4 * 3, planes_.size()/4 * 4);
+//			});
+		}
+	}
+
+	virtual void set_emit( const std::vector<vec3f> &emit ) {
+		std::lock_guard<std::mutex>lock(mtx_);
+
+		assert( emit_new_.size() == emit.size() );
+
+		emit_new_.assign( std::begin(emit), std::end(emit));
+		emit_is_new_ = true;
+	}
+
+	virtual bool update() {
+		std::lock_guard<std::mutex> lock(mtx_);
+
+		if( rad_is_new_ ) {
+			rad_is_new_ = false;
+			return true;
+		} else {
+			return false;
+		}
+
+
+	}
+
+	virtual void copy( std::vector<vec3f> *out ) {
+		std::lock_guard<std::mutex> lock(mtx_);
+		for( size_t i = 0; i < rad_.size(); ++i ) {
+			(*out)[i].r = rad_[i].r;
+			(*out)[i].g = rad_[i].g;
+			(*out)[i].b = rad_[i].b;
+		}
+
+		rad_is_new_ = false;
+	}
+
+
+
+
+private:
+
+	void work( size_t first, size_t last ) {
+		while(true) {
+			{
+				std::lock_guard<std::mutex> lock(mtx_);
+
+				if( emit_is_new_ ) {
+					emit_.swap(emit_new_);
+					emit_is_new_ = false;
+				}
+
+			}
+
+
+//			tick_timer tt;
+			do_radiosity_sse(first, last);
+
+//			std::cout << "elapsed: " << tt.elapsed() << "\n";
+
+			{
+				std::lock_guard<std::mutex> lock(mtx_);
+				rad_is_new_ = true;
+			}
+
+		}
+	}
+
+	void do_radiosity_sse( size_t first, size_t last ) {
+		const int steps = 1;
+		const float min_ff = 0;
+//		std::fill(e_rad_sse_.begin(), e_rad_sse_.end(), vec3f(0.0, 0.0, 0.0));
+//		std::fill(e_rad2_sse_.begin(), e_rad2_sse_.end(), vec3f(0.0, 0.0, 0.0));
+
+		//std::copy( emit_sse_.begin(), emit_sse_.end(), e_rad_sse_.begin() );
+
+		typedef vector_unit<float,4> vu;
+		typedef vu::vec_t vec_t;
+		//steps = 0;
+
+		vec_t reflex_factor = vu::set1(1.0);
+		for( int i = 0; i < steps; ++i ) {
+			//for( auto it = pairs_.begin(); it != pairs_.end(); ++it, ++ff_it ) {
+
+
+			for( size_t j = 0; j < ffs_.size(); ++j ) {
+
+				const size_t s = ffs_[j].size();
+				vec_t rad = vu::set1(0);
+
+				const vec3f cd = planes_[j].col_diff();
+				const vec_t col_diff = vu::set( 0, cd.b, cd.g, cd.r );
+
+
+
+				for( size_t k = 0; k < s; ++k ) {
+					size_t target = ff_target_[j][k];
+					//rad_rgb += (col_diff * e_rad_rgb_[target]) * ff2s_[j][k];
+
+					if( false && ffs_[j][k] < min_ff ) {
+						continue;
+					}
+
+					const vec_t ff = vu::set1( ffs_[j][k] );
+
+					rad = vu::add( rad, vu::mul( vu::mul( col_diff, vu::load( (float*) rad_(target))), ff ));
+
+				}
+
+				vu::store( vu::add( vu::load((float*)emit_(j)), vu::mul(rad, reflex_factor)), (float*)rad2_(j));
+//				std::cout << "col: " << rad2_[j].r << " " << cd.r <<  "\n";
+				//e_rad2_rgb_[j] = emit_rgb_[j] + rad_rgb;// * reflex_factor;
+
+			}
+
+
+			{
+				std::lock_guard<std::mutex>lock(mtx_);
+				//rad_.swap(rad2_);
+				std::copy( &rad2_[first], &rad2_[last], &rad_[first]);
+
+			}
+			//rad_ = rad2__;
+
+
+		}
+
+		//e_rad_rgb_.assign( e_rad_sse_.begin(), e_rad_sse_.end() );
+
+
+
+	}
+
+	std::mutex mtx_;
+//	std::thread thread0_;
+//	std::thread thread1_;
+//	std::thread thread2_;
+//	std::thread thread3_;
+
+	std::vector<std::thread> threads_;
+
+	bool rad_is_new_;
+	bool emit_is_new_;
+
+	aligned_buffer<col3f_sse> emit_new_;
+	aligned_buffer<col3f_sse> emit_;
+	aligned_buffer<col3f_sse> rad_;
+	aligned_buffer<col3f_sse> rad2_;
+	const std::vector<std::vector<float> > &ffs_;
+	const std::vector<std::vector<int> > &ff_target_;
+	const std::vector<plane> &planes_;
+
+};
+
+
+
 class light_scene {
 public:
 	light_scene( const std::vector<plane> &planes, const bitmap3d &solid )
@@ -917,6 +1243,7 @@ public:
 		}
 
 
+		rad_core_ = make_unique<rad_core_threaded>(planes_, ff2s_, ff2_target_);
 
 	}
 
@@ -990,10 +1317,10 @@ public:
 
 	void do_radiosity_sse( int steps = 10, float min_ff = 0.0 ) {
 
-//		std::fill(e_rad_sse_.begin(), e_rad_sse_.end(), vec3f(0.0, 0.0, 0.0));
-//		std::fill(e_rad2_sse_.begin(), e_rad2_sse_.end(), vec3f(0.0, 0.0, 0.0));
+//		std::fill(rad_.begin(), rad_.end(), vec3f(0.0, 0.0, 0.0));
+//		std::fill(rad2_.begin(), rad2_.end(), vec3f(0.0, 0.0, 0.0));
 
-		//std::copy( emit_sse_.begin(), emit_sse_.end(), e_rad_sse_.begin() );
+		//std::copy( emit_.begin(), emit_.end(), rad_.begin() );
 
 		typedef vector_unit<float,4> vu;
 		typedef vu::vec_t vec_t;
@@ -1029,19 +1356,19 @@ public:
 				}
 
 				vu::store( vu::add( vu::load((float*)emit_sse_(j)), vu::mul(rad, reflex_factor)), (float*)e_rad2_sse_(j));
-//				std::cout << "col: " << e_rad2_sse_[j].r << " " << cd.r <<  "\n";
+//				std::cout << "col: " << rad2_[j].r << " " << cd.r <<  "\n";
 				//e_rad2_rgb_[j] = emit_rgb_[j] + rad_rgb;// * reflex_factor;
 
 			}
 
 
 			e_rad_sse_.swap(e_rad2_sse_);
-			//e_rad_sse_ = e_rad2_sse_;
+			//e_rad_sse_ = rad2_;
 
 
 		}
 
-		//e_rad_rgb_.assign( e_rad_sse_.begin(), e_rad_sse_.end() );
+		//e_rad_rgb_.assign( rad_.begin(), rad_.end() );
 
 		for( size_t i = 0; i < e_rad_sse_.size(); ++i ) {
 			e_rad_rgb_[i].r = e_rad_sse_[i].r;
@@ -1052,6 +1379,12 @@ public:
 	}
 
 	void do_radiosity( int steps = 10,  float min_ff = 0.0 ) {
+		{
+			rad_core_->set_emit( emit_rgb_ );
+			rad_core_->update();
+			rad_core_->copy( &e_rad_rgb_ );
+			return;
+		}
 
 		if( true ) {
 			do_radiosity_sse(steps, min_ff);
@@ -1398,6 +1731,8 @@ private:
 
 	std::vector<std::vector<float> > ff2s_;
 	std::vector<std::vector<int> > ff2_target_;
+
+	std::unique_ptr<rad_core> rad_core_;
 
 };
 
@@ -1966,7 +2301,8 @@ public:
 
 
 
-			wnd_.flip();
+
+			wnd_.flip(1);
 
 
 
@@ -1980,7 +2316,7 @@ public:
 
 //			std::cout << "delta: " << delta_t << "\n";
 
-//			CL_System::sleep( 1000 / 60. );
+			CL_System::sleep( 1000 / 60. );
 //			getchar();
 			CL_KeepAlive::process();
 
