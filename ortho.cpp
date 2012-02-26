@@ -162,128 +162,6 @@ class util {
 public:
 
 
-//  template<int sp>
-//  static bool occluded(vec3i p0, vec3i p1, const bitmap3d &solid)
-//  {
-//      // 3d bresenham, ripped from http://www.cobrabytes.com/index.php?topic=1150.0
-//
-//
-//
-//      int x0 = p0.x;
-//      int y0 = p0.y;
-//      int z0 = p0.z;
-//
-//      int x1 = p1.x;
-//      int y1 = p1.y;
-//      int z1 = p1.z;
-//
-//
-//
-//      //'steep' xy Line, make longest delta x plane
-//      const bool swap_xy = abs(y1 - y0) > abs(x1 - x0);
-//      if( swap_xy ) {
-//          std::swap(x0, y0);
-//          std::swap(x1, y1);
-//      }
-//
-//      //do same for xz
-//      const bool swap_xz = abs(z1 - z0) > abs(x1 - x0);
-//      if( swap_xz ) {
-//          std::swap(x0, z0);
-//          std::swap(x1, z1);
-//      }
-//
-//          //delta is Length in each plane
-//      int delta_x = abs(x1 - x0);
-//      int delta_y = abs(y1 - y0);
-//      int delta_z = abs(z1 - z0);
-//
-//      //drift controls when to step in 'shallow' planes
-//      //starting value keeps Line centred
-//      int drift_xy  = (delta_x / 2);
-//      int drift_xz  = (delta_x / 2);
-//
-//          //direction of line
-//      const int step_x = (x0 > x1) ? -1 : 1;
-//      const int step_y = (y0 > y1) ? -1 : 1;
-//      const int step_z = (z0 > z1) ? -1 : 1;
-//
-//          //starting point
-//      int y = y0;
-//      int z = z0;
-//
-//      //step through longest delta (which we have swapped to x)
-//      for( int x = x0; x != x1; x += step_x ) {
-//
-//          //copy position
-//          int cx = x;
-//          int cy = y;
-//          int cz = z;
-//
-//          //unswap (in reverse)
-//          if( swap_xz ) {
-//              std::swap(cx, cz);
-//          }
-//
-//          if( swap_xy ) {
-//              std::swap(cx, cy);
-//          }
-//
-//              //passes through this point
-//          //debugmsg(":" + cx + ", " + cy + ", " + cz)
-//          if( solid( cx / sp, cy / sp, cz / sp ) ) {
-//              return true;
-//          }
-//          //update progress in other planes
-//          drift_xy = drift_xy - delta_y;
-//          drift_xz = drift_xz - delta_z;
-//
-//          //step in y plane
-//          if( drift_xy < 0 ) {
-//              y = y + step_y;
-//              drift_xy = drift_xy + delta_x;
-//          }
-//
-//
-//          //same in z
-//          if( drift_xz < 0 ) {
-//              z = z + step_z;
-//              drift_xz = drift_xz + delta_x;
-//          }
-//      }
-//
-//      return false;
-////
-////
-//////         int x0 = 1;
-//////         int x1 = 10;
-//////
-//////         int y0 = 1;
-//////         int y1 = 5;
-////        int dx =  abs(x1-x0), sx = x0<x1 ? 1 : -1;
-////        int dy = -abs(y1-y0), sy = y0<y1 ? 1 : -1;
-////        int dz = -abs(y1-y0), sy = y0<y1 ? 1 : -1;
-////        int err = dx+dy, e2; /* error value e_xy */
-////
-////        while(true){  /* loop */
-////            //setPixel(x0,y0);
-////            //m(y0,x0) = 1.0;
-////            if( solid(y0,x0) ) {
-////                return true;
-////            }
-////
-////            if (x0==x1 && y0==y1) break;
-////            e2 = 2*err;
-////            if (e2 >= dy) { err += dy; x0 += sx; } /* e_xy+e_x > 0 */
-////            if (e2 <= dx) { err += dx; y0 += sy; } /* e_xy+e_y < 0 */
-////        }
-////
-////        return false;
-//  }
-
-
-
-
     static bool occluded2(vec3i p0, vec3i p1, const bitmap3d &solid)
     {
         // 3d bresenham, ripped from http://www.cobrabytes.com/index.php?topic=1150.0
@@ -475,72 +353,10 @@ public:
             }
 
         }
-//      for( int x = x0; x != x1; x += step_x ) {
-//
-//          //copy position
-//          int cx = x;
-//          int cy = y;
-//          int cz = z;
-//
-//          //unswap (in reverse)
-//          if( swap_xz ) {
-//              std::swap(cx, cz);
-//          }
-//
-//          if( swap_xy ) {
-//              std::swap(cx, cy);
-//          }
-//
-//              //passes through this point
-//          //debugmsg(":" + cx + ", " + cy + ", " + cz)
-//          if( solid( cx, cy, cz ) ) {
-//              return true;
-//          }
-//          //update progress in other planes
-//          drift_xy = drift_xy - delta_y;
-//          drift_xz = drift_xz - delta_z;
-//
-//          //step in y plane
-//          if( drift_xy < 0 ) {
-//              y = y + step_y;
-//              drift_xy = drift_xy + delta_x;
-//          }
-//
-//
-//          //same in z
-//          if( drift_xz < 0 ) {
-//              z = z + step_z;
-//              drift_xz = drift_xz + delta_x;
-//          }
-//      }
+
 
         return false;
-//
-//
-////         int x0 = 1;
-////         int x1 = 10;
-////
-////         int y0 = 1;
-////         int y1 = 5;
-//      int dx =  abs(x1-x0), sx = x0<x1 ? 1 : -1;
-//      int dy = -abs(y1-y0), sy = y0<y1 ? 1 : -1;
-//      int dz = -abs(y1-y0), sy = y0<y1 ? 1 : -1;
-//      int err = dx+dy, e2; /* error value e_xy */
-//
-//      while(true){  /* loop */
-//          //setPixel(x0,y0);
-//          //m(y0,x0) = 1.0;
-//          if( solid(y0,x0) ) {
-//              return true;
-//          }
-//
-//          if (x0==x1 && y0==y1) break;
-//          e2 = 2*err;
-//          if (e2 >= dy) { err += dy; x0 += sx; } /* e_xy+e_x > 0 */
-//          if (e2 <= dx) { err += dx; y0 += sy; } /* e_xy+e_y < 0 */
-//      }
-//
-//      return false;
+
     }
     static bool occluded(vec3i p0, vec3i p1, const bitmap3d &solid)
     {
@@ -634,32 +450,7 @@ public:
         }
 
         return false;
-//
-//
-////         int x0 = 1;
-////         int x1 = 10;
-////
-////         int y0 = 1;
-////         int y1 = 5;
-//      int dx =  abs(x1-x0), sx = x0<x1 ? 1 : -1;
-//      int dy = -abs(y1-y0), sy = y0<y1 ? 1 : -1;
-//      int dz = -abs(y1-y0), sy = y0<y1 ? 1 : -1;
-//      int err = dx+dy, e2; /* error value e_xy */
-//
-//      while(true){  /* loop */
-//          //setPixel(x0,y0);
-//          //m(y0,x0) = 1.0;
-//          if( solid(y0,x0) ) {
-//              return true;
-//          }
-//
-//          if (x0==x1 && y0==y1) break;
-//          e2 = 2*err;
-//          if (e2 >= dy) { err += dy; x0 += sx; } /* e_xy+e_x > 0 */
-//          if (e2 <= dx) { err += dx; y0 += sy; } /* e_xy+e_y < 0 */
-//      }
-//
-//      return false;
+
     }
 };
 
@@ -1333,183 +1124,15 @@ public:
 
     }
 
-    void do_radiosity_sse( int steps = 10, float min_ff = 0.0 ) {
-
-//      std::fill(rad_.begin(), rad_.end(), vec3f(0.0, 0.0, 0.0));
-//      std::fill(rad2_.begin(), rad2_.end(), vec3f(0.0, 0.0, 0.0));
-
-        //std::copy( emit_.begin(), emit_.end(), rad_.begin() );
-
-        typedef vector_unit<float,4> vu;
-        typedef vu::vec_t vec_t;
-        //steps = 0;
-
-        vec_t reflex_factor = vu::set1(1.0);
-        for ( int i = 0; i < steps; ++i ) {
-            //for( auto it = pairs_.begin(); it != pairs_.end(); ++it, ++ff_it ) {
-
-
-            for ( size_t j = 0; j < ff2s_.size(); ++j ) {
-
-                const size_t s = ff2s_[j].size();
-                vec_t rad = vu::set1(0);
-
-                const vec3f cd = planes_[j].col_diff();
-                const vec_t col_diff = vu::set( 0, cd.b, cd.g, cd.r );
-
-
-
-                for ( size_t k = 0; k < s; ++k ) {
-                    size_t target = ff2_target_[j][k];
-                    //rad_rgb += (col_diff * e_rad_rgb_[target]) * ff2s_[j][k];
-
-                    if ( false && ff2s_[j][k] < min_ff ) {
-                        continue;
-                    }
-
-                    const vec_t ff = vu::set1( ff2s_[j][k] );
-
-                    rad = vu::add( rad, vu::mul( vu::mul( col_diff, vu::load( (float*) e_rad_sse_(target))), ff ));
-
-                }
-
-                vu::store( vu::add( vu::load((float*)emit_sse_(j)), vu::mul(rad, reflex_factor)), (float*)e_rad2_sse_(j));
-//              std::cout << "col: " << rad2_[j].r << " " << cd.r <<  "\n";
-                //e_rad2_rgb_[j] = emit_rgb_[j] + rad_rgb;// * reflex_factor;
-
-            }
-
-
-            e_rad_sse_.swap(e_rad2_sse_);
-            //e_rad_sse_ = rad2_;
-
-
-        }
-
-        //e_rad_rgb_.assign( rad_.begin(), rad_.end() );
-
-        for ( size_t i = 0; i < e_rad_sse_.size(); ++i ) {
-            e_rad_rgb_[i].r = e_rad_sse_[i].r;
-            e_rad_rgb_[i].g = e_rad_sse_[i].g;
-            e_rad_rgb_[i].b = e_rad_sse_[i].b;
-        }
-
-    }
 
     void do_radiosity( int steps = 10,  float min_ff = 0.0 ) {
-        {
-            rad_core_->set_emit( emit_rgb_ );
-            rad_core_->update();
-            rad_core_->copy( &e_rad_rgb_ );
-            return;
-        }
-
-        if ( true ) {
-            do_radiosity_sse(steps, min_ff);
-            return;
-        }
-
-        std::copy(emit_rgb_.begin(), emit_rgb_.end(), e_rad_rgb_.begin());
-//          std::fill(e_rad_rgb_.begin(), e_rad_rgb_.end(), vec3f(0.0, 0.0, 0.0));
-        std::fill(e_rad2_rgb_.begin(), e_rad2_rgb_.end(), vec3f(0.0, 0.0, 0.0));
-
-
-
-
-        //const float reflex_factor = 1.0;
-
-
-
-        for ( int i = 0; i < steps; ++i ) {
-            //for( auto it = pairs_.begin(); it != pairs_.end(); ++it, ++ff_it ) {
-            for ( size_t j = 0; j < ff2s_.size(); ++j ) {
-                const size_t s = ff2s_[j].size();
-                vec3f rad_rgb(0.0, 0.0, 0.0);
-                const vec3f col_diff = planes_[j].col_diff();
-
-                for ( size_t k = 0; k < s; ++k ) {
-                    size_t target = ff2_target_[j][k];
-                    rad_rgb += (col_diff * e_rad_rgb_[target]) * ff2s_[j][k];
-                }
-
-                e_rad2_rgb_[j] = emit_rgb_[j] + rad_rgb;// * reflex_factor;
-
-            }
-
-
-            e_rad_rgb_.swap(e_rad2_rgb_);
-            //e_rad_rgb_ = e_rad2_rgb_;
-
-        }
+        // TODO: rename and/or remove parameters
+        rad_core_->set_emit( emit_rgb_ );
+        rad_core_->update();
+        rad_core_->copy( &e_rad_rgb_ );
+        return;
 
     }
-
-//  void do_radiosity2( int steps = 10 ) {
-//
-////        std::fill(e_rad_.begin(), e_rad_.end(), 0.0);
-////        std::fill(e_rad2_.begin(), e_rad2_.end(), 0.0);
-//
-//      std::copy(emit_rgb_.begin(), emit_rgb_.end(), e_rad_rgb_.begin());
-////        std::fill(e_rad_rgb_.begin(), e_rad_rgb_.end(), vec3f(0.0, 0.0, 0.0));
-//      std::fill(e_rad2_rgb_.begin(), e_rad2_rgb_.end(), vec3f(0.0, 0.0, 0.0));
-//
-////        std::vector<vec3f> e_rad2_rgb(patches_.size(), vec3f(0.0, 0.0, 0.0));
-////            std::fill(e_rad_rg.begin(), e_rad.end(), 0.0);
-//
-//
-//
-//      std::cout << "pairs: " << pairs_.size() << "\n";
-//      assert( !pairs_.empty());
-//      const float reflex_factor = 1.0;
-//
-//      for( int i = 0; i < steps; ++i ) {
-//          float rad = 0;
-//          vec3f rad_rgb(0,0,0);
-//
-//          size_t prev = size_t(-1);// pairs_.front().first;
-//          auto ff_it = ffs_.begin();
-//
-//          assert( ffs_.size() == pairs_.size() );
-//          vec3f col_diff;
-//          for( auto it = pairs_.begin(); it != pairs_.end(); ++it, ++ff_it ) {
-//
-//
-//              size_t i = it->first;
-//              size_t j = it->second;
-//
-//              if( i != prev ) {
-//
-//
-//                  if( prev != size_t(-1) ) {
-////                        e_rad2_[prev] = emit_[prev] + 0.5 * rad;
-//                      e_rad2_rgb_[prev] = rad_rgb * reflex_factor;
-//                  }
-//                  rad_rgb = vec3f(0,0,0);
-//                  col_diff = planes_[i].col_diff();
-//
-//                  prev = i;
-//
-//
-//              }
-//
-//              rad_rgb += (col_diff * e_rad_rgb_[j]) * *ff_it;
-//
-//          }
-//
-//          e_rad2_rgb_[prev] = rad_rgb * reflex_factor;
-//
-//          std::transform( e_rad2_rgb_.begin(), e_rad2_rgb_.end(), emit_rgb_.begin(), e_rad2_rgb_.begin(), std::plus<vec3f>() );
-////            for( size_t i = 0; i < e_rad2_rgb_.size(); ++i ) {
-////                e_rad2_rgb_[i] += emit_rgb_[i];
-////            }
-//
-//
-//          e_rad_rgb_.swap(e_rad2_rgb_);
-//
-//
-//      }
-//
-//  }
 
 
 
@@ -1910,42 +1533,6 @@ private:
 };
 
 class ortho {
-//     static void glhPerspectivef2(float *matrix, float fovyInDegrees, float aspectRatio,
-//                                  float znear, float zfar)
-//     {
-//         float ymax, xmax;
-// //         float temp, temp2, temp3, temp4;
-//         ymax = znear * tanf(fovyInDegrees * M_PI / 360.0);
-//         //ymin = -ymax;
-//         //xmin = -ymax * aspectRatio;
-//         xmax = ymax * aspectRatio;
-//         glhFrustumf2(matrix, -xmax, xmax, -ymax, ymax, znear, zfar);
-//     }
-//     static void glhFrustumf2(float *matrix, float left, float right, float bottom, float top,
-//                              float znear, float zfar)
-//     {
-//         float temp, temp2, temp3, temp4;
-//         temp = 2.0 * znear;
-//         temp2 = right - left;
-//         temp3 = top - bottom;
-//         temp4 = zfar - znear;
-//         matrix[0] = temp / temp2;
-//         matrix[1] = 0.0;
-//         matrix[2] = 0.0;
-//         matrix[3] = 0.0;
-//         matrix[4] = 0.0;
-//         matrix[5] = temp / temp3;
-//         matrix[6] = 0.0;
-//         matrix[7] = 0.0;
-//         matrix[8] = (right + left) / temp2;
-//         matrix[9] = (top + bottom) / temp3;
-//         matrix[10] = (-zfar - znear) / temp4;
-//         matrix[11] = -1.0;
-//         matrix[12] = 0.0;
-//         matrix[13] = 0.0;
-//         matrix[14] = (-temp * zfar) / temp4;
-//         matrix[15] = 0.0;
-//     }
 
 public:
 
@@ -1972,28 +1559,7 @@ public:
         return out;
     }
     
-//     std::vector<std::vector<int> > pump( const std::vector<std::vector<int> > &in, const size_t factor ) {
-//         std::vector<std::vector<int> > ret;
-// 
-// //      size_t factor = 2;
-// 
-//         for ( const std::vector<int> &v : in ) {
-//             std::vector<int> v2;
-//             v2.reserve(v.size() * factor);
-// 
-//             std::for_each( v.begin(), v.end(), [&](int vi) {
-//                 for ( size_t i = 0; i < factor; ++i ) {
-//                     v2.push_back(vi);
-//                 }
-//             });
-// 
-//             for ( size_t i = 0; i < factor; ++i ) {
-//                 ret.push_back(v2);
-//             }
-//         }
-// 
-//         return ret;
-//     }
+
 
 
     std::vector<std::vector<int>> matrix_to_intvec2d( const ublas::matrix<int> &in ) {
