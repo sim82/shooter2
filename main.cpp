@@ -544,12 +544,12 @@ public:
         printf( "bla: '%s'\n", str.c_str() );
         
         const char *filename = "/space/test2.wav";
-        size_t file_size;
-        {
-            std::ifstream ist(filename);
-            ist.seekg(0, std::ios::end);
-            file_size = ist.tellg();
-        }
+//         size_t file_size;
+//         {
+//             std::ifstream ist(filename);
+//             ist.seekg(0, std::ios::end);
+//             file_size = ist.tellg();
+//         }
         
         
         
@@ -583,7 +583,7 @@ public:
         
         packed<uint32_t>data_subchunk_size( base + 40 );
         char *data_begin = base + 44;
-        char *data_end = data_begin + *data_subchunk_size;
+//         char *data_end = data_begin + *data_subchunk_size;
         
         CL_SetupCore setup_core;
         CL_SetupSound setup_sound;

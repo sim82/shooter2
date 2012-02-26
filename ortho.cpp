@@ -27,8 +27,13 @@
 #include <stdexcept>
 #include <thread>
 #include <boost/dynamic_bitset.hpp>
+#include <boost/numeric/ublas/matrix.hpp>
+#include <boost/numeric/ublas/matrix_proxy.hpp>
+
 #include "aligned_buffer.h"
 #include "vec_unit.h"
+
+namespace ublas = boost::numeric::ublas;
 
 typedef CL_Vec3i vec3i;
 typedef CL_Vec3f vec3f;
@@ -124,6 +129,16 @@ public:
     }
 
 
+    inline size_t x() const {
+        return x_;
+    }
+    inline size_t y() const {
+        return y_;
+    }
+    inline size_t z() const {
+        return z_;
+    }
+    
 private:
     inline bool inside( int x, int y, int z ) const {
         return !(x < 0 || y < 0 || z < 0 || x >= int(x_) || y >= int(y_) || z >= int(z_) );
@@ -735,7 +750,7 @@ public:
     }
 
     static std::array<float,4> vgen0( dir_type dt ) {
-        std::array<float,4> v;
+//         std::array<float,4> v;
 
         switch ( dt ) {
         case dir_xy_p:
@@ -1599,8 +1614,8 @@ private:
             vec3f norm1 = planes_[i].norm();
             vec3f p1f = p1;//(p1 + norm1 * 0.5);
 
-            size_t minj = size_t(-1);
-            size_t maxj = 0;
+//             size_t minj = size_t(-1);
+//             size_t maxj = 0;
 
 
 
@@ -1895,102 +1910,109 @@ private:
 };
 
 class ortho {
-    static void glhPerspectivef2(float *matrix, float fovyInDegrees, float aspectRatio,
-                                 float znear, float zfar)
-    {
-        float ymax, xmax;
-        float temp, temp2, temp3, temp4;
-        ymax = znear * tanf(fovyInDegrees * M_PI / 360.0);
-        //ymin = -ymax;
-        //xmin = -ymax * aspectRatio;
-        xmax = ymax * aspectRatio;
-        glhFrustumf2(matrix, -xmax, xmax, -ymax, ymax, znear, zfar);
-    }
-    static void glhFrustumf2(float *matrix, float left, float right, float bottom, float top,
-                             float znear, float zfar)
-    {
-        float temp, temp2, temp3, temp4;
-        temp = 2.0 * znear;
-        temp2 = right - left;
-        temp3 = top - bottom;
-        temp4 = zfar - znear;
-        matrix[0] = temp / temp2;
-        matrix[1] = 0.0;
-        matrix[2] = 0.0;
-        matrix[3] = 0.0;
-        matrix[4] = 0.0;
-        matrix[5] = temp / temp3;
-        matrix[6] = 0.0;
-        matrix[7] = 0.0;
-        matrix[8] = (right + left) / temp2;
-        matrix[9] = (top + bottom) / temp3;
-        matrix[10] = (-zfar - znear) / temp4;
-        matrix[11] = -1.0;
-        matrix[12] = 0.0;
-        matrix[13] = 0.0;
-        matrix[14] = (-temp * zfar) / temp4;
-        matrix[15] = 0.0;
-    }
+//     static void glhPerspectivef2(float *matrix, float fovyInDegrees, float aspectRatio,
+//                                  float znear, float zfar)
+//     {
+//         float ymax, xmax;
+// //         float temp, temp2, temp3, temp4;
+//         ymax = znear * tanf(fovyInDegrees * M_PI / 360.0);
+//         //ymin = -ymax;
+//         //xmin = -ymax * aspectRatio;
+//         xmax = ymax * aspectRatio;
+//         glhFrustumf2(matrix, -xmax, xmax, -ymax, ymax, znear, zfar);
+//     }
+//     static void glhFrustumf2(float *matrix, float left, float right, float bottom, float top,
+//                              float znear, float zfar)
+//     {
+//         float temp, temp2, temp3, temp4;
+//         temp = 2.0 * znear;
+//         temp2 = right - left;
+//         temp3 = top - bottom;
+//         temp4 = zfar - znear;
+//         matrix[0] = temp / temp2;
+//         matrix[1] = 0.0;
+//         matrix[2] = 0.0;
+//         matrix[3] = 0.0;
+//         matrix[4] = 0.0;
+//         matrix[5] = temp / temp3;
+//         matrix[6] = 0.0;
+//         matrix[7] = 0.0;
+//         matrix[8] = (right + left) / temp2;
+//         matrix[9] = (top + bottom) / temp3;
+//         matrix[10] = (-zfar - znear) / temp4;
+//         matrix[11] = -1.0;
+//         matrix[12] = 0.0;
+//         matrix[13] = 0.0;
+//         matrix[14] = (-temp * zfar) / temp4;
+//         matrix[15] = 0.0;
+//     }
 
 public:
 
-    std::vector<std::vector<int> > pump( const std::vector<std::vector<int> > &in, const size_t factor ) {
-        std::vector<std::vector<int> > ret;
-
-//      size_t factor = 2;
-
-for ( const std::vector<int> &v : in ) {
-            std::vector<int> v2;
-            v2.reserve(v.size() * factor);
-
-            std::for_each( v.begin(), v.end(), [&](int vi) {
-                for ( size_t i = 0; i < factor; ++i ) {
-                    v2.push_back(vi);
+    ublas::matrix<int> pump( const ublas::matrix<int> &in, const size_t factor ) {
+        ublas::matrix<int> out( in.size1() * factor, in.size2() * factor );
+        
+        for( size_t row = 0; row != in.size1(); ++row ) {
+            ublas::matrix_row<ublas::matrix<int>> r( out, row * factor );
+            
+           
+            
+            for( size_t col = 0; col != in.size2(); ++col ) {
+                for( size_t i = 0; i < factor; ++i ) {
+                    r[col*factor+i] = in(row, col);
                 }
-            });
-
-            for ( size_t i = 0; i < factor; ++i ) {
-                ret.push_back(v2);
             }
+            for( size_t i = 0; i < factor; ++i ) {
+                ublas::matrix_row<ublas::matrix<int>> r2( out, row * factor + i);
+                std::copy( r.begin(), r.end(), r2.begin() );
+            }
+            
         }
-
-        return ret;
+        
+        return out;
     }
+    
+//     std::vector<std::vector<int> > pump( const std::vector<std::vector<int> > &in, const size_t factor ) {
+//         std::vector<std::vector<int> > ret;
+// 
+// //      size_t factor = 2;
+// 
+//         for ( const std::vector<int> &v : in ) {
+//             std::vector<int> v2;
+//             v2.reserve(v.size() * factor);
+// 
+//             std::for_each( v.begin(), v.end(), [&](int vi) {
+//                 for ( size_t i = 0; i < factor; ++i ) {
+//                     v2.push_back(vi);
+//                 }
+//             });
+// 
+//             for ( size_t i = 0; i < factor; ++i ) {
+//                 ret.push_back(v2);
+//             }
+//         }
+// 
+//         return ret;
+//     }
 
-    std::vector<std::vector<int> > load_crystal( std::istream &is ) {
-        std::vector<std::vector<int> > ret;
 
-
-        size_t len = size_t(-1);
-        while ( !is.eof() ) {
-            std::string line;
-
-            std::getline(is, line);
-
-//          while( !is.eof() ) {
-//              char c = is.get();
-//              if( c == '\n' ) {
-//                  break;
-//              }
-//              line.push_back(c);
-//          }
-
-            if ( line.empty()) {
-                break;
-            }
-
-            std::cout << "len: " << line.size() << "'" << std::string(line.begin(), line.end()) << "'\n";
-
-
-            if ( len == size_t(-1)) {
-                len = line.size();
-            } else {
-                assert( len == line.size() );
-            }
-
-            ret.push_back(std::vector<int>(len));
-
-            std::transform( line.begin(), line.end(), ret.back().begin(), [](char c) {
+    std::vector<std::vector<int>> matrix_to_intvec2d( const ublas::matrix<int> &in ) {
+        std::vector<std::vector<int>> out;
+        out.reserve(in.size1());
+        
+        for( auto it1 = in.begin1(); it1 != in.end1(); ++it1 ) {
+            out.emplace_back( it1.begin(), it1.end() );
+            
+//             std::cout << "len2: " << out.back().size() << "\n";
+        }
+//         std::cout << "len1: " << out.size() << "\n";
+        return out;
+    }
+    
+    ublas::matrix<int> load_crystal_slice( std::istream &is, size_t width, size_t height ) {
+        ublas::matrix<int> slice( height, width );
+        
+        auto mapc = [](char c) {
                 c = std::tolower(c);
 
                 if ( c == ' ' ) {
@@ -2003,47 +2025,127 @@ for ( const std::vector<int> &v : in ) {
                     std::cerr << "bad: " << int(c) << "\n";
                     throw std::runtime_error( "bad character in map");
                 }
-            });
-
+        };
+        
+        
+        auto it1 = slice.begin1();
+        for( size_t i = 0; i < height; ++i, ++it1 ) {
+            auto it2 = it1.begin();
+            for( size_t j = 0; j < width; ++j, ++it2 ) {
+                *it2 = mapc( is.get() );
+            }
+            
+            int nl = is.get();
+            assert( nl == '\n' );
         }
+        
+        return slice;
+    }
+    
+    
+    std::vector<ublas::matrix<int>> load_crystal( std::istream &is ) {
+        size_t width;
+        size_t height;
+        size_t num;
+        
+        is >> width;
+        is >> height;
+        is >> num;
+        
+        while( is.get() != '\n' ) {}
+        
+        std::cout << "size: " << width << " " << height << " " << num << "\n";
+        
+        std::vector<ublas::matrix<int> > out;
+        
+        for( size_t i = 0; i < num; ++i ) {
+            
+            out.emplace_back(pump(load_crystal_slice( is, width, height ), pump_factor_));
+
+            std::cout << "map: " << i << "\n";
+            
+            for( auto it1 = out.back().begin1(); it1 != out.back().end1(); ++it1 ) {
+                std::copy( it1.begin(), it1.end(), std::ostream_iterator<int>(std::cout, " " ));
+                std::cout << "\n";
+            }
+
+            
+        }
+        
+        
+        std::cout << "size: " << out.size() << "\n";
+        
+        return out;
+        
+        throw "exit";
+        
+//         size_t len = size_t(-1);
+//         while ( !is.eof() ) {
+//             std::string line;
+// 
+//             std::getline(is, line);
+// 
+// //          while( !is.eof() ) {
+// //              char c = is.get();
+// //              if( c == '\n' ) {
+// //                  break;
+// //              }
+// //              line.push_back(c);
+// //          }
+// 
+//             if ( line.empty()) {
+//                 break;
+//             }
+// 
+//             std::cout << "len: " << line.size() << "'" << std::string(line.begin(), line.end()) << "'\n";
+// 
+// 
+//             if ( len == size_t(-1)) {
+//                 len = line.size();
+//             } else {
+//                 assert( len == line.size() );
+//             }
+// 
+//             ret.push_back(std::vector<int>(len));
+// 
+//             std::transform( line.begin(), line.end(), ret.back().begin(), [](char c) {
+//                 c = std::tolower(c);
+// 
+//                 if ( c == ' ' ) {
+//                     return int(0);
+//                 } else if ( c >= 'a' && c <= 'z' ) {
+//                     return int(1 + c - 'a');
+//                 } else if ( c >= '0' && c <= '9' ) {
+//                     return int(2 + 'z' - 'a' + c - '0');
+//                 } else {
+//                     std::cerr << "bad: " << int(c) << "\n";
+//                     throw std::runtime_error( "bad character in map");
+//                 }
+//             });
+// 
+//         }
 
 
 
-        return ret;
+        
     }
 
     ortho() :
-            pump_factor_(4) {
+      pump_factor_(4) 
+    {
 
-        if ( true )
-        {
-            std::ifstream is( "cryistal-castle-hidden-ramp.txt" );
-//          std::ifstream is( "cryistal-castle-tree-wave.txt" );
+        
+    //std::ifstream is( "cryistal-castle-hidden-ramp.txt" );
+        std::ifstream is( "house1.txt" );
+        //          std::ifstream is( "cryistal-castle-tree-wave.txt" );
 
-            assert(is.good());
-            height_ = pump(load_crystal( is ), pump_factor_);
-        } else {
-
-
-            height_ = {
-                { 5, 5, 4, 4, 5, 5, 5, 5, 5, 5 },
-                { 1, 1, 1, 1, 1, 1, 1, 1, 1, 1 },
-                { 1, 1, 1, 1, 1, 1, 1, 1, 1, 1 },
-                { 1, 1, 1, 1, 10, 1, 1, 1, 1, 1 },
-                { 1, 1, 1, 1, 1, 1, 1, 1, 1, 1 },
-                { 1, 1, 1, 1, 1, 1, 1, 1, 1, 1 },
-                { 1, 1, 1, 1, 1, 1, 1, 1, 1, 1 },
-                { 1, 2, 2, 2, 2, 2, 2, 2, 2, 1 },
-                { 1, 2, 3, 3, 3, 3, 3, 3, 2, 1 },
-                { 1, 2, 3, 4, 4, 4, 4, 3, 2, 1 },
-                { 1, 2, 3, 4, 5, 5, 4, 3, 2, 1 },
-                { 1, 2, 3, 4, 4, 4, 4, 3, 2, 1 },
-                { 1, 2, 3, 3, 3, 3, 3, 3, 2, 1 },
-                { 1, 2, 2, 2, 2, 10, 2, 2, 2, 1 },
-                { 1, 1, 1, 1, 1, 1, 1, 1, 1, 1 },
-                { 5, 5, 5, 5, 5, 5, 5, 5, 5, 5 }
-            };
-        }
+        assert( is.good() );
+        height_fields_ = load_crystal(is);
+        std::cout << "hf: " << height_fields_.size() << "\n";
+        
+        init_solid(height_fields_);
+        
+        
 
         init_planes();
 
@@ -2180,7 +2282,7 @@ for ( const std::vector<int> &v : in ) {
 
 
 //      glBindTexture(GL_TEXTURE_2D, texName);
-        float roty = -45;
+//         float roty = -45;
         int light_x = 0;
         int light_xd = 1;
 
@@ -2351,51 +2453,99 @@ for ( const std::vector<int> &v : in ) {
 
 private:
 
+    void init_solid( const std::vector<ublas::matrix<int>> &slices ) {
+        const auto &slice0 = slices.at(0);
+        size_t size_z = slice0.size1();
+        size_t size_x = slice0.size2();
+        
+        size_t size_y = *std::max_element( slice0.data().begin(), slice0.data().end() ) + 1;
+        
+        std::cout << "size: " << size_x << " " << size_z << " " << size_y << "\n";
+        
+        solid_ = bitmap3d( size_x, size_y, size_z );
+        
+        bool add = true;
+        for( auto &slice : slices ) {
+        
+            int starty = 0;
+            
+            // kind of hack: do not touch blocks below the 1-level in subtractive passes,
+            // to prevent drilling the ground plane...
+            if( !add ) {
+                starty = 1;
+            }
+            
+            for ( int y = starty; y < int(size_y); ++y ) {
+                for ( size_t z = 0; z < size_z; ++z ) {
+                    for ( size_t x = 0; x < size_x; ++x ) {
+                        int h = slice(z,x);
 
+                        
+                        if ( h >= y ) {
+                            solid_(x, y, z) = add;
+                        }    
+//                         solid_(x, y, z) = true;
+                        
+                        
+                    }
+                }
+            }
+            
+            add = !add;
+        }
+    }
+        
+        
 
 
     void init_planes() {
 
-        size_t size_z = height_.size();
-        size_t size_x = height_.front().size();
-        int size_y = 0;
-
-        for ( auto it = height_.begin(); it != height_.end(); ++it ) {
-            size_y = std::max( size_y, (*std::max_element(it->begin(), it->end())) + 1 );
-        }
-
-        std::cout << "solid: " << size_x << " " << size_y << " " << size_z << "\n";
-
-        solid_ = bitmap3d( size_x, size_y, size_z );
-
-        vec3f base_pos( -10.5 * pump_factor_, -10.5, -10.5 * pump_factor_);
-        //vec3f base_pos;
+//         size_t size_z = height_.size();
+//         size_t size_x = height_.front().size();
+//         int size_y = 0;
+// 
+//         for ( auto it = height_.begin(); it != height_.end(); ++it ) {
+//             size_y = std::max( size_y, (*std::max_element(it->begin(), it->end())) + 1 );
+//         }
+// 
+//         std::cout << "solid: " << size_x << " " << size_y << " " << size_z << "\n";
+// 
+//         solid_ = bitmap3d( size_x, size_y, size_z );
+// 
+// 
+//         //vec3f base_pos;
+//         
+// 
+// 
+//         for ( int y = 0; y < size_y; ++y ) {
+//             for ( size_t z = 0; z < height_.size(); ++z ) {
+//                 for ( size_t x = 0; x < height_[z].size(); ++x ) {
+//                     int h = height_[z][x];
+// 
+// 
+//                     if ( h >= y ) {
+//                         solid_(x, y, z) = true;
+//                     }
+// 
+// 
+//                 }
+//             }
+//         }
+        
+        //vec3f base_pos( -10.5, -10.5, -10.5);
+        vec3f base_pos( -(solid_.x() / 2.0 + 0.5), -10.5, -(solid_.z() / 2.0 + 0.5));
         base_pos_ = base_pos;
-
-
-        for ( int y = 0; y < size_y; ++y ) {
-            for ( size_t z = 0; z < height_.size(); ++z ) {
-                for ( size_t x = 0; x < height_[z].size(); ++x ) {
-                    int h = height_[z][x];
-
-
-                    if ( h >= y ) {
-                        solid_(x, y, z) = true;
-                    }
-
-
-                }
-            }
-        }
-
+        
+//         std::cout << "base pos: " << base_pos_ << " " << solid_.x() << "\n";
+        
         const auto &solidc = solid_;
 
         vec3i light_pos( 10, 10, 10 );
         float scale = 1.0 / pump_factor_;
 
-        for ( int y = 0; y < size_y; ++y ) {
-            for ( size_t z = 0; z < height_.size(); ++z ) {
-                for ( size_t x = 0; x < height_[z].size(); ++x ) {
+        for ( int y = 0; y < int(solid_.y()); ++y ) {
+            for ( size_t z = 0; z < solid_.z(); ++z ) {
+                for ( size_t x = 0; x < solid_.x(); ++x ) {
                     if ( solid_(x, y, z) ) {
 
                         const bool occ = util::occluded( light_pos, vec3i(x,y,z), solid_ );
@@ -2419,7 +2569,9 @@ private:
                         if ( !solidc(x,y+1,z)) {
                             planes_.push_back( plane( plane::dir_zx_p, base_pos, vec3i( x, y, z ), scale, energy));
                         }
-
+                        if ( y > 0 && !solidc(x,y-1,z)) {
+                            planes_.push_back( plane( plane::dir_zx_n, base_pos, vec3i( x, y, z ), scale, energy));
+                        }
 
 
                     }
@@ -2442,7 +2594,7 @@ private:
 
 
     void light_planes( const vec3i &light_pos ) {
-for ( plane &p : planes_ ) {
+        for ( plane &p : planes_ ) {
 
             vec3f trace_pos = p.pos() + p.norm();
 
@@ -2482,7 +2634,9 @@ for ( plane &p : planes_ ) {
     CL_DisplayWindow wnd_;
     GLuint texName;
 
-    std::vector<std::vector<int> > height_;
+    
+    std::vector<ublas::matrix<int>> height_fields_;
+    
     std::vector<plane> planes_;
     bitmap3d solid_;
 

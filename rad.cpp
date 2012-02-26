@@ -697,7 +697,7 @@ public:
 				}
 
 
-				vec2f p1 = patches_[i].pos();
+// 				vec2f p1 = patches_[i].pos();
 //					vec3f p1_3d = p1;
 //					if( patches_[i].dir() != patch::dir_flat ) {
 //						p1_3d[2] = 1.0;
@@ -706,8 +706,8 @@ public:
 //					vec3f norm1 = patches_[i].norm();
 
 
-				const vec2f &p2 = patches_[j].pos();
-				double d2 = dist_sqr( p1.x(), p1.y(), p2.x(), p2.y() );
+// 				const vec2f &p2 = patches_[j].pos();
+// 				double d2 = dist_sqr( p1.x(), p1.y(), p2.x(), p2.y() );
 //
 //					if( d2 < 1 ) {
 //						continue;
@@ -882,7 +882,7 @@ public:
 
 
 
-				float v = e_rad[i];
+// 				float v = e_rad[i];
 				auto v_rgb = e_rad_rgb[i];
 
 				CL_Draw::fill(gc, x1, y1, x2, y2, CL_Colorf( v_rgb[0], v_rgb[1], v_rgb[2] ));
@@ -895,7 +895,7 @@ public:
 
 
 
-				float v = e_rad[i];
+// 				float v = e_rad[i];
 				auto v_rgb = e_emit_rgb[i];
 
 				CL_Draw::line(gc, x1, y1, x2, y2, CL_Colorf( v_rgb.x(), v_rgb.y(), v_rgb.z() ) );
@@ -1047,9 +1047,9 @@ public:
 //        }
 //
 //
-        int light_x = 2;
-        int light_y = 10;
-        int ld = 1;
+//         int light_x = 2;
+//         int light_y = 10;
+//         int ld = 1;
 
 
 
