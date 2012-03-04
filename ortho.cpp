@@ -655,6 +655,26 @@ public:
         }
     }
 
+    template<typename oiter>
+    void render_vertex( oiter first ) const {
+        for ( size_t i = 0; i < 4; ++i ) {
+            *(first++) = verts_[i].x;
+            *(first++) = verts_[i].y;
+            *(first++) = verts_[i].z;
+        }
+        
+    }
+    template<typename oiter>
+    oiter render_color( oiter first ) const {
+        for ( size_t i = 0; i < 4; ++i ) {
+            *(first++) = energy_rgb_.r;
+            *(first++) = energy_rgb_.g;
+            *(first++) = energy_rgb_.b;
+        }
+        
+        return first;
+    }
+    
     const vec3i &pos() const {
         return pos_;
     }
@@ -1023,7 +1043,7 @@ public:
         e_rad_sse_.resize( planes_.size() );
         e_rad2_sse_.resize( planes_.size() );
 
-
+        glMapBuffer(GL_ARRAY_BUFFER, GL_WRITE_ONLY);
         if ( false ) {
             setup_formfactors();
             {
@@ -1140,7 +1160,11 @@ public:
         return e_rad_rgb_[i];
     }
 
-
+    const std::vector<vec3f> &rad_rgb() const {
+        return e_rad_rgb_;
+    }
+     
+    
 private:
     inline bool normal_cull( const plane &pl1, const plane &pl2 ) {
         const plane::dir_type d1 = pl1.dir();
@@ -1532,6 +1556,84 @@ private:
 
 };
 
+class vertex_array_builder {
+public:
+    vertex_array_builder() {
+        
+    }
+
+    template<typename iiter>
+    void render( iiter first, iiter last ) {
+        num_planes_ = std::distance( first, last );
+        
+        for( ; first != last; ++first ) {
+         
+            const plane &p = *first;
+            size_t s1 = vertex_.size();
+            
+            p.render_color( std::back_inserter(color_));
+            p.render_vertex( std::back_inserter(vertex_));
+            
+            size_t s2 =vertex_.size();
+            
+            for( ;s1 != s2; ++s1 ){
+                index_.push_back(s1);
+            }
+        }
+        
+        std::cout << "vab: " << vertex_.size() << " " << index_.size() << "\n";
+    }
+    
+    template<typename iiter>
+    void update_color( iiter first, iiter last ) {
+        auto cfirst = color_.begin();
+        
+        assert( std::distance( first, last ) == num_planes_ );
+        
+        for( ;first != last; ++first ) {
+
+            for( size_t i = 0; i < 4; ++i ) {
+                *(cfirst++) = first->r;
+                *(cfirst++) = first->g;
+                *(cfirst++) = first->b;
+            }
+            
+//             const plane &p = *first;
+//  
+//             cfirst = p.render_color( cfirst );
+
+        
+        
+            assert( cfirst <= color_.end() );
+        }
+        
+        
+        
+    }
+    
+    void setup_gl_pointers() {
+        glVertexPointer(3, GL_FLOAT, 0, vertex_.data());
+        glColorPointer(3, GL_FLOAT, 0, color_.data() );
+        glIndexPointer(GL_INT, 0, index_.data());
+        
+        glEnableClientState( GL_VERTEX_ARRAY );
+        glEnableClientState( GL_COLOR_ARRAY );
+        glEnableClientState( GL_INDEX_ARRAY );
+    }
+    
+    
+    void draw_arrays() {
+        glDrawArrays(GL_QUADS, 0, num_planes_ * 4);
+    }
+    
+private:
+    std::vector<float> vertex_;
+    std::vector<float> color_;
+    std::vector<int> index_;
+    
+    size_t num_planes_;
+};
+
 class ortho {
 
 public:
@@ -1700,10 +1802,13 @@ public:
       pump_factor_(4) 
     {
 
-        
-    //std::ifstream is( "cryistal-castle-hidden-ramp.txt" );
-        std::ifstream is( "house1.txt" );
-        //          std::ifstream is( "cryistal-castle-tree-wave.txt" );
+//         glVertexPointer(4, GL_FLOAT, 0, ptr);
+        //glEnableClientState( GL_VERTEX_ARRAY );
+//         glColorPointer(
+
+        std::ifstream is( "cryistal-castle-hidden-ramp.txt" );
+//         std::ifstream is( "house1.txt" );
+        //std::ifstream is( "cryistal-castle-tree-wave.txt" );
 
         assert( is.good() );
         height_fields_ = load_crystal(is);
@@ -1718,6 +1823,9 @@ public:
         CL_OpenGLWindowDescription desc;
         desc.set_size( CL_Size( 1024, 768 ), true );
 
+        desc.set_depth_size(16);
+        //std::cout << "depth: " << desc.get_depth_size();
+        
         wnd_ = CL_DisplayWindow(desc);
 
         CL_GraphicContext_GL gc = wnd_.get_gc();
@@ -1775,6 +1883,8 @@ public:
 
 
         glEnable(GL_DEPTH_TEST);
+        glDepthMask(GL_TRUE);
+        glDepthFunc(GL_LESS);
     }
 
     void setup_perspective( const player &camera ) {
@@ -1824,7 +1934,7 @@ public:
     }
 
     void render_quads() {
-
+        assert(false && "out of order" );
         glBegin(GL_QUADS);
         for ( size_t i = 0; i < planes_.size(); ++i ) {
             plane &p = planes_[i];
@@ -1837,6 +1947,20 @@ public:
 
     }
 
+//     vertex_array_builder setup_quad_buffers() {
+//         vertex_array_builder vab;
+//         
+//         
+//         
+//         for ( size_t i = 0; i < planes_.size(); ++i ) {
+//            
+//             vab.render( planes_[i] );
+//             
+//         }
+//         
+//         return vab;
+//     }
+    
     void start() {
 
 
@@ -1867,6 +1991,9 @@ public:
 
 //      float min_ff = 5e-5;
 
+        vertex_array_builder vab;
+        vab.render(planes_.begin(), planes_.end() );
+        
         while ( true ) {
 
             //cube c(x1, 0, y1);
@@ -1941,17 +2068,19 @@ public:
             }
             ls.post();
 
-            // stupid: transfer rgb energy fomr light scene to planes
-            for ( size_t i = 0; i < planes_.size(); ++i ) {
-                plane &p = planes_[i];
-                p.energy_rgb(ls.rad_rgb(i));
-            }
+           
 
             //ls.render_emit_patches();
 
             steps = 1;
             ls.do_radiosity( steps );
 
+             // stupid: transfer rgb energy fomr light scene to planes
+            for ( size_t i = 0; i < planes_.size(); ++i ) {
+                plane &p = planes_[i];
+                p.energy_rgb(ls.rad_rgb(i));
+            }
+            
             light_x += light_xd;
 
 
@@ -1959,19 +2088,25 @@ public:
 
             //CL_Mat4f proj = CL_Mat4f::look_at( 20, 20, 20, 0, 0, 0, 0.0, 1.0, 0.0 );
 
+            //vab.update_color( planes_.begin(), planes_.end() );
+            vab.update_color( ls.rad_rgb().begin(), ls.rad_rgb().end() );
+            
+            vab.setup_gl_pointers();
+            
             //setup_perspective( p1 );
             setup_ortho();
 
             int ortho_width = 320;
             int ortho_heigth = 200;
             glViewport( gc.get_width() - ortho_width, gc.get_height() - ortho_heigth, ortho_width, ortho_heigth );
-            render_quads();
+       //     vab.draw_arrays();
+            //  render_quads();
 //          glPopMatrix();
             setup_perspective(p1);
             glViewport( 0, 0, gc.get_width(), gc.get_height());
-            render_quads();
-
-
+            //render_quads();
+           // vab.setup_gl_pointers();
+            vab.draw_arrays();
 
 
             wnd_.flip(1);
