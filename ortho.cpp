@@ -2219,15 +2219,15 @@ public:
 
             auto t = CL_System::get_microseconds();
 
-//          std::cout << "fps: " << 1e6 / (t - t_old) << "\n";
+            std::cout << "fps: " << 1e6 / (t - t_old) << "\n";
             delta_t = (t - t_old) * 1.0e-6;
             t_old = t;
 
 
 
-//          std::cout << "delta: " << delta_t << "\n";
+//           std::cout << "delta: " << delta_t << "\n";
 
-            CL_System::sleep( 1000 / 60. );
+//             CL_System::sleep( 1000 / 60. );
 //          getchar();
             CL_KeepAlive::process();
 
