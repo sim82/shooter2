@@ -1571,7 +1571,7 @@ public:
         glBindBuffer( GL_ARRAY_BUFFER, buffers_[0] );
         glBufferData( GL_ARRAY_BUFFER, vertex_size, 0, GL_STATIC_DRAW );
         
-        const size_t color_size = num_planes_ * (4 * 3) * sizeof(float);
+        const size_t color_size = num_planes_ * (4 * 4) * sizeof(GLubyte);
         glBindBuffer( GL_ARRAY_BUFFER, buffers_[1] );
         glBufferData( GL_ARRAY_BUFFER, color_size, 0, GL_DYNAMIC_DRAW );
         
@@ -1613,21 +1613,29 @@ public:
         glUnmapBuffer( GL_ARRAY_BUFFER );
     }
     
+    template<const int minv, const int maxv >
+    inline GLubyte clamp( int v ) {
+        //return std::max( minv, std::min( maxv, v ));
+        return std::min( maxv, v );
+        //return v;
+    }
+    
     template<typename iiter>
     void update_color( iiter first, iiter last ) {
 //         const size_t num_planes_ = std::distance( first, last );
         
         glBindBuffer( GL_ARRAY_BUFFER, buffers_[1] );
-        float *b = (float*) glMapBuffer( GL_ARRAY_BUFFER, GL_WRITE_ONLY );
+        GLubyte *b = (GLubyte*) glMapBuffer( GL_ARRAY_BUFFER, GL_WRITE_ONLY );
         assert( b != nullptr );
         
         //b += 4 * 3 * num_planes_;
         
         for( ; first != last; ++first ) {
             for( size_t i = 0; i < 4; ++i ) {
-                *(b++) = first->r;
-                *(b++) = first->g;
-                *(b++) = first->b;
+                *(b++) = clamp<0,255>(255 * first->r);
+                *(b++) = clamp<0,255>(255 * first->g);
+                *(b++) = clamp<0,255>(255 * first->b);
+                *(b++) = 255;
             }   
             
         }
@@ -1640,7 +1648,7 @@ public:
         glVertexPointer(3, GL_FLOAT, 0, (GLvoid*)((char*)NULL));
        // glColorPointer(3, GL_FLOAT, 0, (GLvoid*)((char*)NULL+ 4 * 3 * num_planes_ * sizeof(GLfloat) ));
         glBindBuffer( GL_ARRAY_BUFFER, buffers_[1] );
-        glColorPointer(3, GL_FLOAT, 0, (GLvoid*)((char*)NULL));
+        glColorPointer(4, GL_UNSIGNED_BYTE, 0, (GLvoid*)((char*)NULL));
         
 //         glBindBuffer(GL_ARRAY_BUFFER, buffer_);
         glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, index_buffer_);
@@ -2213,7 +2221,7 @@ public:
             //vab.draw_arrays();
             vbob.draw_arrays();
 
-            wnd_.flip(1);
+            wnd_.flip(0);
 
 
 
