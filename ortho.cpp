@@ -715,7 +715,7 @@ private:
 class rad_core {
 public:
     virtual void set_emit( const std::vector<vec3f> &emit ) = 0;
-    virtual bool update() = 0;
+//     virtual bool update() = 0;
     virtual void copy( std::vector<vec3f> *out ) = 0;
 };
 
@@ -842,16 +842,54 @@ public:
 
     };
 
+    
+    std::vector<std::pair<size_t,size_t>> calc_plane_distribution( const size_t num_partition ) {
+        size_t num_ints = 0;
+        std::vector<std::pair<size_t,size_t>> parts;
+        for( auto &ff : ffs_ ) {
+            num_ints += ff.size();
+        }
+        
+        std::cout << "num_ints: " << num_ints << "\n";
+        
+        size_t ints_per_part = num_ints / num_partition;
+        
+        size_t first = 0;
+        size_t last = 0;
+        size_t acc = 0;
+        for( size_t i = 0; i < num_partition; ++i ) {
+            while( last < ffs_.size() && acc < ints_per_part ) {
+                acc += ffs_[last].size();
+                ++last;
+            }
+            acc = 0;
+            parts.emplace_back( first, last );
+            first = last;
+        }
+        
+        parts.back().second = ffs_.size();
+        
+        
+        for( auto &p : parts ) { 
+            std::cout << "part: " << p.first << " " << p.second << "\n";
+        }
+        return parts;
+    }
 
     rad_core_threaded( const std::vector<plane> &planes, const std::vector<std::vector<float> > &ffs, const std::vector<std::vector<int> > &ff_target )
             : rad_is_new_(false),
             emit_is_new_(false),
             emit_new_(planes.size()), emit_( planes.size() ), rad_( planes.size() ), rad2_( planes.size() ),
             ffs_(ffs), ff_target_(ff_target),
-            planes_(planes)
+            planes_(planes),
+            pints_(0),
+            pints_last_(0),
+            pints_last_time_(0)
     {
 
-        if ( true ) {
+        
+        
+        if ( !true ) {
             threads_.push_back( std::thread( [&]() {
                 work(0, planes_.size());
             }) );
@@ -861,9 +899,21 @@ public:
         } else {
             const size_t num_planes = planes_.size();
             const size_t num_threads = 3;
+            
+            auto part = calc_plane_distribution(num_threads);
             for ( size_t i = 0; i < num_threads; ++i ) {
-                threads_.push_back( std::thread( [&]() {
-                    work( num_planes / num_threads * i, num_planes / num_threads * (i+1));
+                
+                
+                
+                //const size_t first = num_planes / num_threads * i;
+                //const size_t last = num_planes / num_threads * (i+1);
+                const size_t first = part.at(i).first;
+                const size_t last = part.at(i).second;
+            
+                std::cout << "thread: " << i << " " << first << " " << last << " " << num_planes << "\n";
+                
+                threads_.push_back( std::thread( [=]() {
+                    work( first, last );
                 }));
             }
 
@@ -888,14 +938,15 @@ public:
     }
 
     virtual bool update() {
-        std::lock_guard<std::mutex> lock(mtx_);
-
-        if ( rad_is_new_ ) {
-            rad_is_new_ = false;
-            return true;
-        } else {
-            return false;
-        }
+        return rad_is_new_;
+//         std::lock_guard<std::mutex> lock(mtx_);
+// 
+//         if ( rad_is_new_ ) {
+//             rad_is_new_ = false;
+//             return true;
+//         } else {
+//             return false;
+//         }
 
 
     }
@@ -909,6 +960,18 @@ public:
         }
 
         rad_is_new_ = false;
+        cl_ubyte64 time = CL_System::get_microseconds();
+        
+        cl_ubyte64 dt = time - pints_last_time_;
+        
+        if( dt >= 1e6 ) {
+            const size_t dp = pints_ - pints_last_;
+            pints_last_ = pints_;
+            
+            pints_last_time_ = time;
+            
+            std::cout << "pint/s: " << dp / (dt / 1.0e6) << "\n";
+        }
     }
 
 
@@ -922,17 +985,19 @@ private:
                 std::lock_guard<std::mutex> lock(mtx_);
 
                 if ( emit_is_new_ ) {
-                    emit_.swap(emit_new_);
+                  //  emit_.swap(emit_new_);
+                    assert( emit_new_.size() == emit_.size());
+                    std::copy( emit_new_.begin(), emit_new_.end(), emit_.begin() );
                     emit_is_new_ = false;
                 }
 
             }
 
 
-//          tick_timer tt;
+//             tick_timer tt;
             do_radiosity_sse(first, last);
 
-//          std::cout << "elapsed: " << tt.elapsed() << "\n";
+//             std::cout << "elapsed: " << tt.elapsed() << "\n";
 
             {
                 std::lock_guard<std::mutex> lock(mtx_);
@@ -953,13 +1018,15 @@ private:
         typedef vector_unit<float,4> vu;
         typedef vu::vec_t vec_t;
         //steps = 0;
-
+//         std::cout << "do: " << first << " " << last << "\n";
         vec_t reflex_factor = vu::set1(1.0);
+        
+        size_t pints = 0;
         for ( int i = 0; i < steps; ++i ) {
             //for( auto it = pairs_.begin(); it != pairs_.end(); ++it, ++ff_it ) {
 
 
-            for ( size_t j = 0; j < ffs_.size(); ++j ) {
+            for ( size_t j = first; j < last; ++j ) {
 
                 const size_t s = ffs_[j].size();
                 vec_t rad = vu::set1(0);
@@ -982,7 +1049,7 @@ private:
                     rad = vu::add( rad, vu::mul( vu::mul( col_diff, vu::load( (float*) rad_(target))), ff ));
 
                 }
-
+                pints += s;
                 vu::store( vu::add( vu::load((float*)emit_(j)), vu::mul(rad, reflex_factor)), (float*)rad2_(j));
 //              std::cout << "col: " << rad2_[j].r << " " << cd.r <<  "\n";
                 //e_rad2_rgb_[j] = emit_rgb_[j] + rad_rgb;// * reflex_factor;
@@ -994,7 +1061,7 @@ private:
                 std::lock_guard<std::mutex>lock(mtx_);
                 //rad_.swap(rad2_);
                 std::copy( &rad2_[first], &rad2_[last], &rad_[first]);
-
+                pints_ += pints;
             }
             //rad_ = rad2__;
 
@@ -1025,7 +1092,9 @@ private:
     const std::vector<std::vector<float> > &ffs_;
     const std::vector<std::vector<int> > &ff_target_;
     const std::vector<plane> &planes_;
-
+    size_t pints_;
+    size_t pints_last_;
+    cl_ubyte64 pints_last_time_;
 };
 
 
@@ -1150,7 +1219,7 @@ public:
     void do_radiosity( int steps = 10,  float min_ff = 0.0 ) {
         // TODO: rename and/or remove parameters
         rad_core_->set_emit( emit_rgb_ );
-        rad_core_->update();
+//         rad_core_->update();
         rad_core_->copy( &e_rad_rgb_ );
         return;
 
@@ -1915,7 +1984,7 @@ public:
         //glEnableClientState( GL_VERTEX_ARRAY );
 //         glColorPointer(
 
-        std::ifstream is( "cryistal-castle-hidden-ramp.txt" );
+        std::ifstream is( "cryistal-castle-hidden-ramp2x.txt" );
 //         std::ifstream is( "house1.txt" );
         //std::ifstream is( "cryistal-castle-tree-wave.txt" );
 
@@ -2101,7 +2170,7 @@ public:
 //      float min_ff = 5e-5;
 
         vertex_array_builder vab;
-        vab.render(planes_.begin(), planes_.end() );
+//         vab.render(planes_.begin(), planes_.end() );
         
         vbo_builder vbob(planes_.size());
         vbob.update_index_buffer(planes_.size());
@@ -2201,9 +2270,9 @@ public:
             //CL_Mat4f proj = CL_Mat4f::look_at( 20, 20, 20, 0, 0, 0, 0.0, 1.0, 0.0 );
 
             //vab.update_color( planes_.begin(), planes_.end() );
-            //vab.update_color( ls.rad_rgb().begin(), ls.rad_rgb().end() );
+//             vab.update_color( ls.rad_rgb().begin(), ls.rad_rgb().end() );
             
-            //vab.setup_gl_pointers();
+//             vab.setup_gl_pointers();
             vbob.update_color(ls.rad_rgb().begin(), ls.rad_rgb().end());
             //setup_perspective( p1 );
             setup_ortho();
@@ -2216,9 +2285,9 @@ public:
 //          glPopMatrix();
             setup_perspective(p1);
             glViewport( 0, 0, gc.get_width(), gc.get_height());
-            //render_quads();
-           // vab.setup_gl_pointers();
-            //vab.draw_arrays();
+//             render_quads();
+//            vab.setup_gl_pointers();
+//             vab.draw_arrays();
             vbob.draw_arrays();
 
             wnd_.flip(0);
@@ -2227,7 +2296,7 @@ public:
 
             auto t = CL_System::get_microseconds();
 
-            std::cout << "fps: " << 1e6 / (t - t_old) << "\n";
+//            std::cout << "fps: " << 1e6 / (t - t_old) << "\n";
             delta_t = (t - t_old) * 1.0e-6;
             t_old = t;
 
