@@ -898,7 +898,7 @@ public:
 //          });
         } else {
             const size_t num_planes = planes_.size();
-            const size_t num_threads = 3;
+            const size_t num_threads = 2;
             
             auto part = calc_plane_distribution(num_threads);
             for ( size_t i = 0; i < num_threads; ++i ) {
@@ -1984,7 +1984,7 @@ public:
         //glEnableClientState( GL_VERTEX_ARRAY );
 //         glColorPointer(
 
-        std::ifstream is( "cryistal-castle-hidden-ramp2x.txt" );
+        std::ifstream is( "cryistal-castle-hidden-ramp.txt" );
 //         std::ifstream is( "house1.txt" );
         //std::ifstream is( "cryistal-castle-tree-wave.txt" );
 
@@ -2175,6 +2175,7 @@ public:
         vbo_builder vbob(planes_.size());
         vbob.update_index_buffer(planes_.size());
         vbob.update_vertices( planes_.begin(), planes_.end());
+	bool light_changed = true;
         while ( true ) {
 
             //cube c(x1, 0, y1);
@@ -2200,19 +2201,24 @@ public:
 
             if ( keyboard.get_keycode(CL_KEY_LEFT) ) {
                 light_pos.x += 1;
+		light_changed = true;
             }
             if (  keyboard.get_keycode(CL_KEY_RIGHT) ) {
                 light_pos.x -= 1;
+		light_changed = true;
             }
             if ( keyboard.get_keycode(CL_KEY_UP) ) {
                 light_pos.z += 1;
+		light_changed = true;
             }
             if (  keyboard.get_keycode(CL_KEY_DOWN) ) {
                 light_pos.z -= 1;
+		light_changed = true;
             }
             if ( keyboard.get_keycode(CL_KEY_L )) {
                 if ( !light_button_down ) {
                     light_on = !light_on;
+		    light_changed = true;
                 }
                 light_button_down = true;
             } else {
@@ -2236,6 +2242,8 @@ public:
             }
 
 //          light_planes(vec3i(light_x, 10, 10 ));
+
+	    if( light_changed ) {
             ls.reset_emit();
             //ls.render_light(vec3f( 40, 50.0, light_x ), vec3f(1.0, 1.0, 1.0 ));
             if ( light_on ) {
@@ -2248,7 +2256,8 @@ public:
                 ls.render_light( light_weird, vec3f(1.0, 0.8, 0.6 ));
             }
             ls.post();
-
+            light_changed = false;
+	    }
            
 
             //ls.render_emit_patches();
@@ -2290,7 +2299,7 @@ public:
 //             vab.draw_arrays();
             vbob.draw_arrays();
 
-            wnd_.flip(0);
+            wnd_.flip(1);
 
 
 
