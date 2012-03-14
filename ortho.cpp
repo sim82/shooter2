@@ -12,13 +12,19 @@
  *  for more details.
  */
 
-
 #include <ClanLib/display.h>
 #include <ClanLib/application.h>
 #include <ClanLib/gl.h>
 #include <ClanLib/core.h>
+#include <GL/gl.h>
+#include <GL/glx.h>
+#include <CL/cl_gl.h>
 
+#define __CL_ENABLE_EXCEPTIONS
+#include "cl.hpp"
 #include "cycle.h"
+#include "cl_error_codes.h"
+#include <execinfo.h>
 #include <fstream>
 #include <array>
 #include <algorithm>
@@ -26,6 +32,7 @@
 #include <memory>
 #include <stdexcept>
 #include <thread>
+#include <atomic>
 #include <boost/dynamic_bitset.hpp>
 #include <boost/numeric/ublas/matrix.hpp>
 #include <boost/numeric/ublas/matrix_proxy.hpp>
@@ -34,6 +41,23 @@
 #include "vec_unit.h"
 
 namespace ublas = boost::numeric::ublas;
+
+
+class spinlock_mutex {
+public:
+    spinlock_mutex() : flag_(ATOMIC_FLAG_INIT) {}
+    
+    void lock() {
+        while( flag_.test_and_set( std::memory_order_acquire ));
+    }
+    
+    void unlock() {
+        flag_.clear();
+    }
+    
+private:
+    std::atomic_flag flag_;
+};
 
 typedef CL_Vec3i vec3i;
 typedef CL_Vec3f vec3f;
@@ -802,8 +826,8 @@ private:
             }
 
 
-            rad_.swap(rad2_);
-            //rad_ = rad2__;
+//            rad_.swap(rad2_);
+            rad_ = rad2_;
 
 
         }
@@ -837,6 +861,8 @@ private:
 };
 
 class rad_core_threaded: public rad_core {
+    //typedef std::mutex lock_type;
+    typedef spinlock_mutex lock_type;
 public:
     class worker {
 
@@ -891,7 +917,7 @@ public:
         
         if ( !true ) {
             threads_.push_back( std::thread( [&]() {
-                work(0, planes_.size());
+                work(0, planes_.size(), 0);
             }) );
 
 //          thread0_ = std::thread( [&]() { work(0, planes_.size()/4);
@@ -913,7 +939,7 @@ public:
                 std::cout << "thread: " << i << " " << first << " " << last << " " << num_planes << "\n";
                 
                 threads_.push_back( std::thread( [=]() {
-                    work( first, last );
+                    work( first, last, i );
                 }));
             }
 
@@ -929,7 +955,7 @@ public:
     }
 
     virtual void set_emit( const std::vector<vec3f> &emit ) {
-        std::lock_guard<std::mutex>lock(mtx_);
+        std::lock_guard<lock_type>lock(mtx_);
 
         assert( emit_new_.size() == emit.size() );
 
@@ -952,7 +978,7 @@ public:
     }
 
     virtual void copy( std::vector<vec3f> *out ) {
-        std::lock_guard<std::mutex> lock(mtx_);
+        std::lock_guard<lock_type> lock(mtx_);
         for ( size_t i = 0; i < rad_.size(); ++i ) {
             (*out)[i].r = rad_[i].r;
             (*out)[i].g = rad_[i].g;
@@ -979,13 +1005,15 @@ public:
 
 private:
 
-    void work( size_t first, size_t last ) {
+    void work( size_t first, size_t last, size_t rank ) {
         while (true) {
+            if( rank == 0 )
             {
-                std::lock_guard<std::mutex> lock(mtx_);
+                std::lock_guard<lock_type> lock(mtx_);
 
                 if ( emit_is_new_ ) {
-                  //  emit_.swap(emit_new_);
+                    //emit_.swap(emit_new_);
+                    //emit_ = std::move(emit_new_);
                     assert( emit_new_.size() == emit_.size());
                     std::copy( emit_new_.begin(), emit_new_.end(), emit_.begin() );
                     emit_is_new_ = false;
@@ -999,8 +1027,9 @@ private:
 
 //             std::cout << "elapsed: " << tt.elapsed() << "\n";
 
+            if( rank == 0 )
             {
-                std::lock_guard<std::mutex> lock(mtx_);
+                std::lock_guard<lock_type> lock(mtx_);
                 rad_is_new_ = true;
             }
 
@@ -1058,7 +1087,7 @@ private:
 
 
             {
-                std::lock_guard<std::mutex>lock(mtx_);
+                std::lock_guard<lock_type>lock(mtx_);
                 //rad_.swap(rad2_);
                 std::copy( &rad2_[first], &rad2_[last], &rad_[first]);
                 pints_ += pints;
@@ -1074,7 +1103,7 @@ private:
 
     }
 
-    std::mutex mtx_;
+    lock_type mtx_;
 //  std::thread thread0_;
 //  std::thread thread1_;
 //  std::thread thread2_;
@@ -1640,7 +1669,7 @@ public:
         glBindBuffer( GL_ARRAY_BUFFER, buffers_[0] );
         glBufferData( GL_ARRAY_BUFFER, vertex_size, 0, GL_STATIC_DRAW );
         
-        const size_t color_size = num_planes_ * (4 * 4) * sizeof(GLubyte);
+        color_size = num_planes_ * (4 * 4) * sizeof(GLubyte);
         glBindBuffer( GL_ARRAY_BUFFER, buffers_[1] );
         glBufferData( GL_ARRAY_BUFFER, color_size, 0, GL_DYNAMIC_DRAW );
         
@@ -1726,7 +1755,8 @@ public:
 // This is the actual draw command
         glDrawElements(GL_QUADS, num_planes_ * 4, GL_UNSIGNED_INT, (GLvoid*)((char*)NULL));
     }
-private:
+//private:
+    size_t color_size;
     
     GLuint buffers_[2];
     GLuint index_buffer_;
@@ -1889,7 +1919,7 @@ public:
     }
     
     
-    std::vector<ublas::matrix<int>> load_crystal( std::istream &is ) {
+    std::vector<ublas::matrix<int> > load_crystal( std::istream &is ) {
         size_t width;
         size_t height;
         size_t num;
@@ -1923,7 +1953,7 @@ public:
         
         return out;
         
-        throw "exit";
+        //throw "exit";
         
 //         size_t len = size_t(-1);
 //         while ( !is.eof() ) {
@@ -1984,7 +2014,7 @@ public:
         //glEnableClientState( GL_VERTEX_ARRAY );
 //         glColorPointer(
 
-        std::ifstream is( "cryistal-castle-hidden-ramp2x.txt" );
+        std::ifstream is( "cryistal-castle-hidden-ramp.txt" );
 //         std::ifstream is( "house1.txt" );
         //std::ifstream is( "cryistal-castle-tree-wave.txt" );
 
@@ -2011,8 +2041,32 @@ public:
 
 
         gc.set_active();
+        
+        try {
+            init_opencl();
+        } catch( cl::Error x ) {
+            
+//             std::array<void*, 256> bt;
+//             //void *bt[256];
+//             
+//             size_t size = backtrace( bt.data(), bt.size() );
+//             char **strings = backtrace_symbols( bt.data(), size );
+//             std::cout << "backtrace: " << size << "\n";
+//             for( size_t i = 0; i < size; ++i ) {
+//                 std::cout << i << " " << strings[i] << "\n";
+//             }
+//             free( strings );
+            
+            std::cerr << "opencl initialization failed\ncall: " << x.what() << "\nerror code: " << cl_str_error( x.err() ) << "\n";            
+            throw;
+        }
+        
+      //  throw 0;
+        
         glMatrixMode(GL_PROJECTION);                        //hello
 
+        
+        
 
         CL_Mat4f proj = CL_Mat4f::perspective( 60, 1.5, 2, 200 );
 //      CL_Mat4f proj = CL_Mat4f::ortho( -20.0 * pump_factor_, 20.0 * pump_factor_, -15.0 * pump_factor_, 15.0 * pump_factor_, 0, 200 );
@@ -2175,6 +2229,31 @@ public:
         vbo_builder vbob(planes_.size());
         vbob.update_index_buffer(planes_.size());
         vbob.update_vertices( planes_.begin(), planes_.end());
+        
+        cl::Buffer buf;
+        try {
+            cl_int cl_err;
+            buf = cl::Buffer( clCreateFromGLBuffer( cl_context_(), CL_MEM_WRITE_ONLY, vbob.buffers_[1], &cl_err ));
+            assert( cl_err == CL_SUCCESS );
+        
+        
+            cl_fcolor_ = cl::Buffer( cl_context_, CL_MEM_READ_ONLY, planes_.size() * 3 * sizeof(float) );
+            
+            cl_kernel_.setArg(0, buf() );
+            cl_kernel_.setArg(1, cl_fcolor_ );
+            cl_uint cl_color_size = planes_.size();
+            cl_kernel_.setArg(2, cl_color_size );
+            
+            
+            
+        } catch( cl::Error x ) {
+            std::cerr << "cl error during gl buffer setup\ncall: " << x.what() << "\nerror code: " << cl_str_error( x.err() ) << "\n";            
+            throw;
+        }
+        bool light_changed = true;
+        
+        
+        
         while ( true ) {
 
             //cube c(x1, 0, y1);
@@ -2200,19 +2279,24 @@ public:
 
             if ( keyboard.get_keycode(CL_KEY_LEFT) ) {
                 light_pos.x += 1;
+                light_changed = true;
             }
             if (  keyboard.get_keycode(CL_KEY_RIGHT) ) {
                 light_pos.x -= 1;
+                light_changed = true;
             }
             if ( keyboard.get_keycode(CL_KEY_UP) ) {
                 light_pos.z += 1;
+                light_changed = true;
             }
             if (  keyboard.get_keycode(CL_KEY_DOWN) ) {
                 light_pos.z -= 1;
+                light_changed = true;
             }
             if ( keyboard.get_keycode(CL_KEY_L )) {
                 if ( !light_button_down ) {
                     light_on = !light_on;
+                    light_changed = true;
                 }
                 light_button_down = true;
             } else {
@@ -2235,21 +2319,24 @@ public:
 //              light_x = -20;
             }
 
-//          light_planes(vec3i(light_x, 10, 10 ));
-            ls.reset_emit();
-            //ls.render_light(vec3f( 40, 50.0, light_x ), vec3f(1.0, 1.0, 1.0 ));
-            if ( light_on ) {
-                //ls.render_light(light_pos, vec3f(1.0, 0.8, 0.6 ));
-
-                //vec3f light_pos( p1.pos)
-
-//              vec3f light_pos = (p1.pos()* pump_factor_) - base_pos_;
-                vec3f light_weird = (light_pos * pump_factor_) - base_pos_;
-                ls.render_light( light_weird, vec3f(1.0, 0.8, 0.6 ));
+            //          light_planes(vec3i(light_x, 10, 10 ));
+            
+            if( light_changed ) {
+                ls.reset_emit();
+                //ls.render_light(vec3f( 40, 50.0, light_x ), vec3f(1.0, 1.0, 1.0 ));
+                if ( light_on ) {
+                    //ls.render_light(light_pos, vec3f(1.0, 0.8, 0.6 ));
+                    
+                    //vec3f light_pos( p1.pos)
+                    
+                    //              vec3f light_pos = (p1.pos()* pump_factor_) - base_pos_;
+                    vec3f light_weird = (light_pos * pump_factor_) - base_pos_;
+                    ls.render_light( light_weird, vec3f(1.0, 0.8, 0.6 ));
+                }
+                ls.post();
+                light_changed = false;
             }
-            ls.post();
-
-           
+            
 
             //ls.render_emit_patches();
 
@@ -2273,7 +2360,39 @@ public:
 //             vab.update_color( ls.rad_rgb().begin(), ls.rad_rgb().end() );
             
 //             vab.setup_gl_pointers();
-            vbob.update_color(ls.rad_rgb().begin(), ls.rad_rgb().end());
+     //       vbob.update_color(ls.rad_rgb().begin(), ls.rad_rgb().end());
+#if 1
+            try
+            {
+                glFinish();
+                const auto &rad_colors = ls.rad_rgb();
+                
+                cl_cqueue_.enqueueWriteBuffer( cl_fcolor_, false, 0, rad_colors.size() * sizeof(vec3f), rad_colors.data() );
+                
+                cl_int err = clEnqueueAcquireGLObjects( cl_cqueue_(), 1, &(buf()), 0, 0, 0 );
+                assert( err == CL_SUCCESS );
+
+
+                // Set arg 3 and execute the kernel
+                
+                cl_cqueue_.enqueueNDRangeKernel( cl_kernel_, 0, cl::NDRange(planes_.size()) );
+                
+                               
+
+                // unmap buffer object
+                err = clEnqueueReleaseGLObjects( cl_cqueue_(), 1, &(buf()), 0,0,0);
+                assert( err == CL_SUCCESS );
+                
+                cl_cqueue_.finish();
+                
+                
+                
+            } catch( cl::Error x ) {
+                std::cerr << "cl error during kernel execution\ncall: " << x.what() << "\nerror code: " << cl_str_error( x.err() ) << "\n";               
+                throw;
+            }
+#endif       
+            
             //setup_perspective( p1 );
             setup_ortho();
 
@@ -2290,7 +2409,7 @@ public:
 //             vab.draw_arrays();
             vbob.draw_arrays();
 
-            wnd_.flip(0);
+            wnd_.flip(1);
 
 
 
@@ -2323,7 +2442,7 @@ public:
     }
 
     static int main( const std::vector<CL_String> &args ) {
-
+	 _mm_setcsr( _mm_getcsr() | _MM_FLUSH_ZERO_ON);
 //      plane p( plane::dir_zx_p, vec3f( 0.5, 0.5, 0.5 ));
 
 //      return 0;
@@ -2504,6 +2623,115 @@ private:
         }
     }
 
+    
+    void init_opencl() {
+        
+        // get opencl platform list.
+        std::vector<cl::Platform> platforms;
+        cl_int err = cl::Platform::get( &platforms );
+        
+        assert( err == CL_SUCCESS );
+        
+        // find NVIDIA platform
+        
+        for( cl::Platform & p : platforms ) {
+            std::string vendor = p.getInfo<CL_PLATFORM_VENDOR>();
+            std::cout << "vendor: " << vendor << "\n";
+            
+            if( vendor.find( "NVIDIA" ) == 0 ) {
+                cl_platform_ = p;
+                std::cout << "selected\n";
+            }
+            
+        }
+        
+        assert( cl_platform_() != 0 );
+
+        
+        // get device list for platform
+        std::vector<cl::Device> devices;
+        err = cl_platform_.getDevices( CL_DEVICE_TYPE_GPU, &devices );
+        
+        assert( err == CL_SUCCESS );
+        
+        // choose first device that supports gl sharing
+        for( cl::Device & d : devices ) {
+            auto name = d.getInfo<CL_DEVICE_NAME>();
+            std::cout << "device: " << name << "\n";
+            std::string extensions = d.getInfo<CL_DEVICE_EXTENSIONS>();
+            const char * gl_sharing_ext = "cl_khr_gl_sharing";
+            
+            if( cl_used_devices_.empty() && extensions.find( gl_sharing_ext ) != extensions.npos ) {
+                std::cout << "using\n";
+                cl_used_devices_.push_back( d );
+            }
+        }
+        
+        assert( cl_used_devices_.size() == 1 );
+
+        // create context
+        cl_context_properties props[] =
+        {
+            CL_GL_CONTEXT_KHR, (cl_context_properties)glXGetCurrentContext(),
+            CL_GLX_DISPLAY_KHR, (cl_context_properties)glXGetCurrentDisplay(),
+            CL_CONTEXT_PLATFORM, (cl_context_properties)cl_platform_(),
+            0
+        };
+        
+        cl_context_ = cl::Context( cl_used_devices_, props );
+        assert( cl_context_() != 0 );
+        auto num_devs = cl_context_.getInfo<CL_CONTEXT_NUM_DEVICES>();
+        
+        std::cout << "num devs: " << num_devs << "\n";
+        
+        cl_cqueue_ = cl::CommandQueue( cl_context_, cl_used_devices_.front(), 0, &err );
+        assert( err == CL_SUCCESS );
+        
+                //cxGPUContext = clCreateContext(props, 1, &cdDevices[uiDeviceUsed], NULL, NULL, &ciErrNum);
+
+        std::string source;
+        {
+            std::ifstream is( "test.cl" );
+            
+            // I hate myself for doing it this way, but it's the easiest...
+            
+            while( is.good() ) {
+                
+                char c = is.get();
+                if( is.good() ) {
+                    source.push_back(c);
+                }
+            }
+        }
+        
+       // std::cout << "source >>>>" << source << "<<<<\n";
+        assert( !source.empty() );
+        
+        try {
+            cl_program_ = cl::Program( cl_context_, source, false, &err );
+            
+            cl_program_.build();
+        } catch( cl::Error x ) {
+            std::cout << "cl error during build: " << x.what() << " " << cl_str_error(x.err()) << "\n"; 
+            
+            if( x.err() == CL_BUILD_PROGRAM_FAILURE ) {
+                auto log = cl_program_.getBuildInfo<CL_PROGRAM_BUILD_LOG>( cl_used_devices_.front() );
+                
+                std::cout << "build error. log: \n" << log << "end of log.\n";
+            }
+            
+            throw;
+        }
+        assert( err == CL_SUCCESS );
+        
+        cl_kernel_ = cl::Kernel( cl_program_, "convert_colors", &err );
+        assert( err == CL_SUCCESS );
+        
+        
+        
+        
+    }
+    
     CL_SetupCore setup_core_;
 
 
@@ -2524,6 +2752,16 @@ private:
 
     const size_t pump_factor_;
     vec3f base_pos_;
+    
+    cl::Platform cl_platform_;
+    std::vector<cl::Device> cl_used_devices_;
+    cl::Context cl_context_;
+    
+    cl::Program cl_program_;
+    cl::Kernel cl_kernel_;
+    
+    cl::CommandQueue cl_cqueue_;
+    cl::Buffer cl_fcolor_;
 };
 
 
