@@ -924,7 +924,7 @@ public:
 //          });
         } else {
             const size_t num_planes = planes_.size();
-            const size_t num_threads = 3;
+            const size_t num_threads = 2;
             
             auto part = calc_plane_distribution(num_threads);
             for ( size_t i = 0; i < num_threads; ++i ) {
