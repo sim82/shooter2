@@ -101,7 +101,49 @@ std::unique_ptr<T> make_unique( Args&& ...args )
     return std::unique_ptr<T>( new T( std::forward<Args>(args)... ) );
 }
 
+template<typename Block>
+class bitset_hash_iterator : public std::iterator<std::output_iterator_tag,void,void,void,void> {
+    Block &hash;
+    size_t i;
+public:
+    bitset_hash_iterator ( Block &out_hash ) : hash(out_hash), i(1) { hash = 1234; }
+    
+    inline bitset_hash_iterator<Block>& operator= (const bitset_hash_iterator<Block> &other ) {
+        hash = other.hash;
+        return *this;
+    }
 
+    inline bitset_hash_iterator<Block>& operator= (const Block &v ) {
+        hash ^= v * i++;
+        return *this;
+    }
+    
+    inline bitset_hash_iterator<Block>& operator* ()
+    { return *this; }
+    inline bitset_hash_iterator<Block>& operator++ ()
+    { return *this; }
+    inline bitset_hash_iterator<Block>& operator++ (int)
+    { return *this; }
+};
+
+class bitset_hash {
+public:
+    size_t operator()( const boost::dynamic_bitset<> &bs ) const {
+    #ifndef WIN32
+        // TODO: find out why the asser fails under 64bit win32
+        BOOST_STATIC_ASSERT( sizeof( size_t ) == sizeof( boost::dynamic_bitset<>::block_type ) );
+    #endif
+        boost::dynamic_bitset<>::block_type hash = 0;
+        
+        to_block_range( bs, bitset_hash_iterator<boost::dynamic_bitset<>::block_type>(hash));
+        
+        
+        
+        // FIXME: what to do when size_t and Block have different width?
+        // would a 'static if' with no overhead work?
+        return size_t(hash);
+    }
+};
 
 class bitmap3d : private boost::dynamic_bitset<> {
 
@@ -161,6 +203,12 @@ public:
     }
     inline size_t z() const {
         return z_;
+    }
+    
+    inline uint64_t hash() const {
+        bitset_hash bh;
+        
+        return bh(*this);
     }
     
 private:
@@ -735,6 +783,132 @@ private:
 
 };
 
+class scene_static {
+public:
+    void init_solid( const std::vector<ublas::matrix<int>> &slices ) {
+        const auto &slice0 = slices.at(0);
+        size_t size_z = slice0.size1();
+        size_t size_x = slice0.size2();
+        
+        size_t size_y = *std::max_element( slice0.data().begin(), slice0.data().end() ) + 1;
+        
+        std::cout << "size: " << size_x << " " << size_z << " " << size_y << "\n";
+        
+        solid_ = bitmap3d( size_x, size_y, size_z );
+        
+        bool add = true;
+        for( auto &slice : slices ) {
+        
+            int starty = 0;
+            
+            // kind of hack: do not touch blocks below the 1-level in subtractive passes,
+            // to prevent drilling the ground plane...
+            if( !add ) {
+                starty = 1;
+            }
+            
+            for ( int y = starty; y < int(size_y); ++y ) {
+                for ( size_t z = 0; z < size_z; ++z ) {
+                    for ( size_t x = 0; x < size_x; ++x ) {
+                        int h = slice(z,x);
+
+                        
+                        if ( h >= y ) {
+                            solid_(x, y, z) = add;
+                        }    
+//                         solid_(x, y, z) = true;
+                        
+                        
+                    }
+                }
+            }
+            
+            add = !add;
+        }
+    }
+        
+    void init_planes() {
+
+        vec3f base_pos( -(solid_.x() / 2.0 + 0.5), -10.5, -(solid_.z() / 2.0 + 0.5));
+        base_pos_ = base_pos;
+        
+//         std::cout << "base pos: " << base_pos_ << " " << solid_.x() << "\n";
+        
+        const auto &solidc = solid_;
+
+        vec3i light_pos( 10, 10, 10 );
+        
+        int pump_factor_ = 2;
+        float scale = 1.0 / pump_factor_;
+
+        for ( int y = 0; y < int(solid_.y()); ++y ) {
+            for ( size_t z = 0; z < solid_.z(); ++z ) {
+                for ( size_t x = 0; x < solid_.x(); ++x ) {
+                    if ( solid_(x, y, z) ) {
+
+                        const bool occ = util::occluded( light_pos, vec3i(x,y,z), solid_ );
+
+                        float energy = occ ? 0.2 : 1.0;
+
+
+
+                        if ( !solidc(x,y,z+1)) {
+                            planes_.push_back( plane( plane::dir_xy_p, base_pos, vec3i( x, y, z ), scale, energy));
+                        }
+                        if ( !solidc(x,y,z-1)) {
+                            planes_.push_back( plane( plane::dir_xy_n, base_pos, vec3i( x, y, z ), scale, energy));
+                        }
+                        if ( !solidc(x+1,y,z)) {
+                            planes_.push_back( plane( plane::dir_yz_p, base_pos, vec3i( x, y, z ), scale, energy));
+                        }
+                        if ( !solidc(x-1,y,z)) {
+                            planes_.push_back( plane( plane::dir_yz_n, base_pos, vec3i( x, y, z ), scale, energy));
+                        }
+                        if ( !solidc(x,y+1,z)) {
+                            planes_.push_back( plane( plane::dir_zx_p, base_pos, vec3i( x, y, z ), scale, energy));
+                        }
+                        if ( y > 0 && !solidc(x,y-1,z)) {
+                            planes_.push_back( plane( plane::dir_zx_n, base_pos, vec3i( x, y, z ), scale, energy));
+                        }
+
+
+                    }
+                }
+            }
+        }
+//      for( size_t z = 0; z < height_.size(); ++z ) {
+//          for( size_t x = 0; x < height_[z].size(); ++x ) {
+//              planes_.push_back( plane( plane::dir_zx_n, base_pos, vec3i( x, 20, z ), 0.0));
+//          }
+//      }
+
+
+        std::cout << "planes: " << planes_.size() << "\n";
+        planes_.shrink_to_fit();
+
+
+
+    }
+    
+    const std::vector<plane> &planes() const {
+        return planes_;
+    }
+    
+    const bitmap3d &solid() const {
+        return solid_;
+    }
+    
+    uint64_t hash() const {
+        
+        return solid_.hash();
+    }
+
+private:
+    std::vector<plane> planes_;
+    bitmap3d solid_;
+    vec3f base_pos_;
+};
+
 
 class rad_core {
 public:
@@ -860,6 +1034,751 @@ private:
     ticks t1_;
 };
 
+
+
+template<typename T>
+std::vector<T> apply_permutation( std::vector<T> *v1, const std::vector<size_t> &perm ) {
+    //assert( v1->size() == v2->size() );
+    std::vector<T> v2;
+    v2.reserve(perm.size());
+    assert( perm.size() == v1->size() );
+    for( size_t p : perm ) {
+        v2.push_back( std::move( v1->at(p )));
+    }
+    
+    return v2;
+}
+
+// class light_scene {
+// public:
+//     light_scene( const std::vector<plane> &planes, const bitmap3d &solid )
+//             : planes_(planes), solid_(solid)
+//     {
+//         const size_t num_threads = 2;
+//         
+// 
+//         emit_rgb_.resize( planes_.size() );
+//         e_rad_rgb_.resize( planes_.size() );
+//         e_rad2_rgb_.resize( planes_.size() );
+// 
+//         emit_sse_.resize( planes_.size() );
+//         e_rad_sse_.resize( planes_.size() );
+//         e_rad2_sse_.resize( planes_.size() );
+// 
+//         glMapBuffer(GL_ARRAY_BUFFER, GL_WRITE_ONLY);
+//         if ( false ) {
+//             setup_formfactors();
+//             {
+//                 std::ofstream os( "ff.bin" );
+// 
+// 
+//                 write_formfactors(os);
+// 
+//             }
+//         } else {
+//             try
+//             {
+// 
+// 
+//                 std::ifstream is( "ff.bin" );
+//                 if ( !is.good() ) {
+//                     throw std::runtime_error( "cannot open ff.bin");
+//                 }
+//                 read_formfactors(is);
+// 
+//             } catch ( std::runtime_error x ) {
+//                 std::cerr << x.what() << "\n";
+//                 std::cerr << "error while reading ff.bin. regenerating\n";
+//                 setup_formfactors();
+//             }
+//         }
+// 
+// 
+//         
+// 
+//         typedef std::pair<size_t,size_t> ss_pair;
+//         std::vector<ss_pair> fs;
+//         for( size_t i = 0; i < ff2s_.size(); ++i ) {
+//             //std::cout << "ffs: " << i << " " << ff2s_[i].size() << "\n";
+//             fs.emplace_back( ff2s_[i].size(), i );
+//         }
+//         
+//         std::sort( fs.begin(), fs.end(), []( const ss_pair &p1, const ss_pair &p2 ) { return p1.first == p2.first ? p1.second < p2.second : p1.first < p2.first; } );
+//         
+//         //std::vector<size_t> permutation(fs.size());
+//         perm_size_.resize(fs.size());
+//         
+//         std::transform( fs.begin(), fs.end(), perm_size_.begin(), [](const ss_pair &p) { return p.second; } );
+//       
+//         std::vector<ss_pair> part_bounds;
+// #if 1
+//         std::vector<ss_pair> fs_part;
+//       
+//         perm_size_part_.reserve(fs.size());
+//         const size_t npart = 2;
+//         for( size_t part = 0; part < 2; ++part ) {
+//             size_t first = fs_part.size();
+//             
+//             std::vector<ss_pair>::iterator it = fs.begin() + part;
+//             
+//             for( ; it < fs.end(); it += npart ) {
+//                 //fs_part.push_back( *it );
+//                 perm_size_part_.push_back( it->second );
+//             }
+//             
+//             part_bounds.emplace_back( first, fs_part.size() );
+//         }
+//         assert( perm_size_part_.size() == fs.size());
+//         
+//         
+//         
+//         {
+//             std::ofstream os( "sort.txt" );
+//             std::transform( fs_part.begin(), fs_part.end(), std::ostream_iterator<size_t>(os, "\n" ), [](const ss_pair &p) {return p.second;});
+//         }
+// #endif   
+//         
+// //         {
+// //             auto planes2 = apply_permutation(&planes_, permutation);
+// //             auto ff2s2 = apply_permutation( &ff2s_, permutation);
+// //             auto ff2_target2 = apply_permutation( &ff2_target_, permutation);
+// //             
+// //             planes_.swap(planes2);
+// //             ff2s_.swap(ff2s2);
+// //             ff2_target_.swap( ff2_target2 );
+// //         }
+//         rad_core_ = make_unique<rad_core_threaded>(planes_, ff2s_, ff2_target_, part_bounds);
+//         
+//     }
+// 
+// 
+//     void reset_emit() {
+//         std::fill( emit_rgb_.begin(), emit_rgb_.end(), vec3f(0.0, 0.0, 0.0));
+//     }
+// 
+//     void render_light( const vec3f &light_pos, const vec3f &light_color ) {
+//         //std::fill( emit_rgb_.begin(), emit_rgb_.end(), vec3f(0.2, 0.2, 0.2 ));
+//         std::fill( emit_rgb_.begin(), emit_rgb_.end(), vec3f(0.0, 0.0, 0.0 ));
+//         for ( size_t i = 0; i < planes_.size(); ++i ) {
+// 
+//             auto &p = planes_[i];
+// 
+//             vec3f trace_pos = p.pos() + p.norm();
+// 
+//             const bool occ = true && util::occluded( light_pos, trace_pos, solid_ );
+// 
+// 
+//             if ( !occ ) {
+//                 vec3f d = light_pos - p.pos();
+//                 d.normalize();
+//                 float len = d.length();
+//                 d /= len;
+//                 float dot = d.dot( p.norm() );
+// 
+//                 if ( dot > 0 ) {
+//                     emit_rgb_[i] += (p.col_diff() * light_color) * dot * (5/(2*3.1415*len*len));
+//                 }
+// 
+//             }
+//         }
+// 
+//         //emit_sse_.assign( emit_rgb_.begin(), emit_rgb_.end() );
+// 
+// 
+//     }
+// 
+//     void post() {
+//         std::copy( emit_rgb_.begin(), emit_rgb_.end(), emit_sse_.begin() );
+//     }
+// 
+//     float randf() const {
+//         return std::rand() / float(RAND_MAX);
+//     }
+// 
+//     void render_emit_patches() {
+//         static int x = 0;
+//         static int xd = 1;
+//         for ( size_t i = 0; i < planes_.size(); ++i ) {
+// 
+// 
+// 
+// //          if( randf() > 0.9 ) {
+// //              emit_rgb_[i] += vec3f(randf(), randf(), randf());
+// //          }
+//             if ( (planes_[i].pos().y / 2) == x ) {
+//                 //if( planes_[i].dir() == plane::dir_zx_p ) {
+//                 emit_rgb_[i] += planes_[i].col_diff();
+//             }
+// 
+// 
+//         }
+//         x += xd;
+//         if ( x > 15 || x == 0) {
+//             xd = -xd;
+//         }
+// 
+//     }
+// 
+// 
+//     void do_radiosity( int steps = 10,  float min_ff = 0.0 ) {
+//         // TODO: rename and/or remove parameters
+//         rad_core_->set_emit( emit_rgb_ );
+// //         rad_core_->update();
+//         rad_core_->copy( &e_rad_rgb_ );
+//         return;
+// 
+//     }
+// 
+// 
+// 
+//     const vec3f &rad_rgb( size_t i ) {
+//         return e_rad_rgb_[i];
+//     }
+// 
+//     const std::vector<vec3f> &rad_rgb() const {
+//         return e_rad_rgb_;
+//     }
+//      
+//     
+// 
+//     
+// private:
+//     void write_formfactors( std::ostream &os ) {
+//         size_t size1 = ff2s_.size();
+// 
+//         os.write((char*) &size1, sizeof(size_t));
+//         for ( size_t i = 0; i < size1; ++i ) {
+//             size_t size2 = ff2s_[i].size();
+//             os.write((char*) &size2, sizeof(size_t));
+// 
+//             os.write( (char*) ff2s_[i].data(), size2 * sizeof(float));
+//             os.write( (char*) ff2_target_[i].data(), size2 * sizeof(int));
+//         }
+// 
+//     }
+// 
+//     void read_formfactors( std::istream &is ) {
+//         size_t size1;
+//         is.read( (char *) &size1, sizeof( size_t ));
+// 
+//         if ( size1 != planes_.size() ) {
+//             throw std::runtime_error( "cannot read form factors: size1 != planes_.size()");
+//         }
+// 
+// 
+//         std::vector<std::vector<float> > ff2s(size1);
+//         std::vector<std::vector<int> > ff2_target(size1);
+// 
+// 
+//         for ( size_t i = 0; i < size1; ++i ) {
+//             size_t size2;
+// 
+//             is.read( (char *) &size2, sizeof( size_t ));
+// 
+//             if ( size2 > planes_.size() ) {
+//                 throw std::runtime_error( "cannot read form factors: size2 != planes_.size()");
+//             }
+// 
+//             ff2s[i].resize(size2);
+//             ff2_target[i].resize(size2);
+// 
+//             is.read( (char*) ff2s[i].data(), size2 * sizeof(float));
+//             is.read( (char*) ff2_target[i].data(), size2 * sizeof(int));
+// 
+//             std::for_each(ff2_target[i].begin(), ff2_target[i].end(), [&](int t) {
+//                 if ( size_t(t) >= planes_.size() ) {
+//                     throw std::runtime_error( "cannot read form factors: target out of range");
+//                 }
+//             });
+//         }
+// 
+//         // exception safe!
+//         ff2s_.swap( ff2s );
+//         ff2_target_.swap( ff2_target );
+// 
+//     }
+// 
+//     void setup_formfactors() {
+// 
+// //      std::ofstream os( "ff.txt" );
+// 
+//         std::ofstream os;//( "matrix.pnm");
+//         os << "P1\n";
+//         os << planes_.size() << " " << planes_.size() << "\n";
+// 
+//         ff2s_.resize(planes_.size());
+//         ff2_target_.resize(planes_.size());
+// 
+//         std::vector<float> ff_tmp;
+//         std::vector<int> target_tmp;
+//         size_t num_ff = 0;
+// 
+//         for ( size_t i = 0; i < planes_.size(); ++i ) {
+//             vec3i p1 = planes_.at(i).pos();
+// 
+// 
+//             vec3f norm1 = planes_[i].norm();
+//             vec3f p1f = p1;//(p1 + norm1 * 0.5);
+// 
+// //             size_t minj = size_t(-1);
+// //             size_t maxj = 0;
+// 
+// 
+// 
+//             ff_tmp.clear();
+//             target_tmp.clear();
+// 
+//             for ( size_t j = 0; j < i /*planes_.size()*/; ++j ) {
+// 
+//                 //                  std::cerr << "i: " << i << " " << j << "\n";
+// 
+// 
+//                 if ( normal_cull( planes_[i], planes_[j] )) {
+// //                  os << "0 ";
+//                     continue;
+//                 }
+// 
+// //              if( planes_[i].normal_cull(planes_[j])) {
+// //                  os << "0 ";
+// //                  continue;
+// //              }
+// 
+//                 const vec3i &p2 = planes_[j].pos();
+// 
+// 
+//                 const vec3f &norm2 = planes_[j].norm();
+//                 vec3f p2f = p2;// + (norm2 * 0.5);
+// 
+//                 float d2 = dist_sqr( p1f, p2f );
+// 
+// 
+// 
+//                 bool dist_cull = false;
+// 
+// 
+//                 float ff = 0;
+//                 {
+// 
+// 
+//                     vec3f dn = (p1f - p2f).normalize();
+//                     //std::cout << p1_3d << " " << p2_3d << " " << dn << "\n";
+//                     //.norm();
+//                     float ff1 = std::max( 0.0f, norm1.dot(vec3f(0.0, 0.0, 0.0)-dn));
+//                     float ff2 = std::max( 0.0f, norm2.dot(dn));
+// 
+//                     ff = ff1 * ff2;
+// //                  ff = std::max( 0.0f, ff );
+//                     //                      std::cout << "ff: " << ff << "\n";
+//                     //dist_cull = ff < 0.01;
+//                 }
+// 
+// 
+// 
+//                 //dist_cull = false;
+// 
+// 
+// 
+//                 ff /=  (3.1415 * d2);
+// 
+// //              os << ff << "\n";
+// 
+//                 dist_cull = ff < 5e-5;
+// 
+//                 if ( !dist_cull && i != j ) {
+// 
+//                     if ( util::occluded( p1 + norm1, p2 + norm2, solid_ )) {
+//                         //                  os << "0 ";
+//                         continue;
+//                     }
+// 
+// //                  pairs_.push_back(std::make_pair(i,j));
+// //
+// //
+// //                  ffs_.push_back(ff);// / (3.1415 * d2));
+//                     ff_tmp.push_back(ff);
+//                     target_tmp.push_back(j);
+// 
+//                     // j < i => ff2s_[j] is already initialized.
+//                     ff2s_[j].push_back(ff);
+//                     ff2_target_[j].push_back(i);
+// 
+// //                  minj = std::min( minj, j );
+// //                  maxj = std::max( maxj, j );
+//                     ++num_ff;
+// //                  os << "1 ";
+//                 } else {
+//                     os << "0 ";
+//                 }
+// 
+//             }
+// 
+//             ff2s_[i].assign(ff_tmp.begin(), ff_tmp.end());
+//             ff2_target_[i].assign(target_tmp.begin(), target_tmp.end());
+//             
+//             
+//             os << "\n";
+// 
+//             //std::cout << "i: " << i << " " << num_ff << " " << minj << " - " << maxj << "\n";
+//         }
+// 
+// 
+// 
+// 
+// 
+// 
+//         std::cout << "num interactions (half): " << num_ff << "\n";
+// 
+// //      throw std::runtime_error("xxx");
+// 
+// //      e_emit.resize(patches_.size());
+// //      e_rad.resize(patches_.size());
+// //
+// //      e_emit_rgb.resize(patches_.size());
+// //
+// //
+// //      col_diff.resize(patches_.size());
+// 
+//     }
+// 
+//     const std::vector<plane> &planes_;
+//     const bitmap3d solid_;
+// 
+// 
+//     std::vector<vec3f> emit_rgb_;
+//     std::vector<vec3f> e_rad_rgb_;
+//     std::vector<vec3f> e_rad2_rgb_;
+// 
+// 
+//     aligned_buffer<col3f_sse> emit_sse_;
+//     aligned_buffer<col3f_sse> e_rad_sse_;
+//     aligned_buffer<col3f_sse> e_rad2_sse_;
+// 
+// 
+// 
+//     std::vector<std::vector<float> > ff2s_;
+//     std::vector<std::vector<int> > ff2_target_;
+// 
+//     std::unique_ptr<rad_core> rad_core_;
+// 
+//     std::vector<size_t> perm_size_;
+//     std::vector<size_t> perm_size_part_;
+// };
+
+class light_utils {
+public:
+    inline static bool normal_cull( const plane &pl1, const plane &pl2 ) {
+        const plane::dir_type d1 = pl1.dir();
+        const plane::dir_type d2 = pl2.dir();
+
+        const vec3i &p1 = pl1.pos();
+        const vec3i &p2 = pl2.pos();
+
+        return p1 == p2 ||
+               d1 == d2 ||
+               (d1 == plane::dir_xy_n && d2 == plane::dir_xy_p && p1.z < p2.z) ||
+               (d1 == plane::dir_xy_p && d2 == plane::dir_xy_n && p1.z > p2.z) ||
+               (d1 == plane::dir_yz_n && d2 == plane::dir_yz_p && p1.x < p2.x) ||
+               (d1 == plane::dir_yz_p && d2 == plane::dir_yz_n && p1.x > p2.x) ||
+               (d1 == plane::dir_zx_n && d2 == plane::dir_zx_p && p1.y < p2.y) ||
+               (d1 == plane::dir_zx_p && d2 == plane::dir_zx_n && p1.y > p2.y);
+
+    }
+    
+    static void render_light( std::vector<vec3f> *emitptr, const scene_static &scene, const vec3f &light_pos, const vec3f &light_color ) {
+        assert( emitptr != nullptr );
+        
+       // std::cerr << "size: " << scene.planes().size() << " " << emitptr->size() << std::endl;
+        assert( scene.planes().size() == emitptr->size() );
+        
+        auto &emit_rgb_ = *emitptr; // convenience
+        
+        //std::fill( emit_rgb_.begin(), emit_rgb_.end(), vec3f(0.2, 0.2, 0.2 ));
+        std::fill( emit_rgb_.begin(), emit_rgb_.end(), vec3f(0.0, 0.0, 0.0 ));
+        for ( size_t i = 0; i < scene.planes().size(); ++i ) {
+
+            auto &p = scene.planes()[i];
+
+            vec3f trace_pos = p.pos() + p.norm();
+
+            const bool occ = true && util::occluded( light_pos, trace_pos, scene.solid() );
+
+
+            if ( !occ ) {
+                vec3f d = light_pos - p.pos();
+                d.normalize();
+                float len = d.length();
+                d /= len;
+                float dot = d.dot( p.norm() );
+
+                if ( dot > 0 ) {
+                    emit_rgb_[i] += (p.col_diff() * light_color) * dot * (5/(2*3.1415*len*len));
+                }
+
+            }
+        }
+
+        //emit_sse_.assign( emit_rgb_.begin(), emit_rgb_.end() );
+
+
+    }
+    
+};
+
+class light_static {
+public:
+    light_static() {}
+    
+    light_static( std::vector<std::vector<float> > && f_fact, std::vector<std::vector<int> > && f_target ) 
+    : f_fact_(f_fact), f_target_(f_target)
+    {}
+    
+    light_static( std::istream &is, uint64_t hash ) {
+        
+        
+        uint64_t hashf = -1;
+        is.read( (char *) &hashf, sizeof( size_t ));
+        
+        if( !is.good() ) {
+            throw std::runtime_error( "file hande bad (empty file)" );
+        }
+        
+        if( hashf != hash ) {
+            throw std::runtime_error( "different hash" );
+        }
+        
+        size_t size1;
+        is.read( (char *) &size1, sizeof( size_t ));
+
+        if( !is.good() ) {
+            throw std::runtime_error( "file hande bad (preliminary end of file)" );
+        }
+        
+        f_fact_.resize(size1);
+        f_target_.resize(size1);
+
+
+        for ( size_t i = 0; i < size1; ++i ) {
+            size_t size2;
+
+            is.read( (char *) &size2, sizeof( size_t ));
+
+            if( !is.good() ) {
+                throw std::runtime_error( "file hande bad (preliminary end of file)" );
+            }
+
+            f_fact_[i].resize(size2);
+            f_target_[i].resize(size2);
+
+            is.read( (char*) f_fact_[i].data(), size2 * sizeof(float));
+            is.read( (char*) f_target_[i].data(), size2 * sizeof(int));
+
+            if( !is.good() ) {
+                throw std::runtime_error( "file hande bad (preliminary end of file)" );
+            }
+            
+            std::for_each(f_target_[i].begin(), f_target_[i].end(), [&](int t) {
+                if ( size_t(t) >= size1 ) {
+                    throw std::runtime_error( "cannot read form factors: target out of range");
+                }
+            });
+        }
+
+    }
+    
+    void write( std::ostream &os, uint64_t hash ) {
+        os.write((char*) &hash, sizeof(uint64_t));
+        
+        size_t size1 = f_fact_.size();
+
+        os.write((char*) &size1, sizeof(size_t));
+        for ( size_t i = 0; i < size1; ++i ) {
+            size_t size2 = f_fact_[i].size();
+            os.write((char*) &size2, sizeof(size_t));
+
+            os.write( (char*) f_fact_[i].data(), size2 * sizeof(float));
+            os.write( (char*) f_target_[i].data(), size2 * sizeof(int));
+        }
+
+    }
+
+    
+    size_t num_planes() const {
+        return f_fact_.size();
+    }
+    
+    const std::vector<std::vector<float> > &f_fact() const {
+        return f_fact_;
+    }
+    
+    const std::vector<std::vector<int> > &f_target() const {
+        return f_target_;
+    }
+
+    
+private:
+    std::vector<std::vector<float> > f_fact_;
+    std::vector<std::vector<int> > f_target_;
+
+};
+
+
+static light_static setup_formfactors( const std::vector<plane> &planes_, const bitmap3d &solid_ ) {
+    
+    //      std::ofstream os( "ff.txt" );
+    
+    std::ofstream os;//( "matrix.pnm");
+    os << "P1\n";
+    os << planes_.size() << " " << planes_.size() << "\n";
+    
+    std::vector<std::vector<float> > ff2s_(planes_.size());
+    std::vector<std::vector<int> > ff2_target_(planes_.size());
+    
+    std::vector<float> ff_tmp;
+    std::vector<int> target_tmp;
+    size_t num_ff = 0;
+    
+    for ( size_t i = 0; i < planes_.size(); ++i ) {
+        vec3i p1 = planes_.at(i).pos();
+        
+        
+        vec3f norm1 = planes_[i].norm();
+        vec3f p1f = p1;//(p1 + norm1 * 0.5);
+        
+        //             size_t minj = size_t(-1);
+        //             size_t maxj = 0;
+        
+        
+        
+        ff_tmp.clear();
+        target_tmp.clear();
+        
+        for ( size_t j = 0; j < i /*planes_.size()*/; ++j ) {
+            
+            //                  std::cerr << "i: " << i << " " << j << "\n";
+            
+            
+            if ( light_utils::normal_cull( planes_[i], planes_[j] )) {
+                //                  os << "0 ";
+                continue;
+            }
+            
+            //              if( planes_[i].normal_cull(planes_[j])) {
+        //                  os << "0 ";
+        //                  continue;
+        //              }
+        
+        const vec3i &p2 = planes_[j].pos();
+        
+        
+        const vec3f &norm2 = planes_[j].norm();
+        vec3f p2f = p2;// + (norm2 * 0.5);
+        
+        float d2 = dist_sqr( p1f, p2f );
+        
+        
+        
+        bool dist_cull = false;
+        
+        
+        float ff = 0;
+        {
+            
+            
+            vec3f dn = (p1f - p2f).normalize();
+            //std::cout << p1_3d << " " << p2_3d << " " << dn << "\n";
+            //.norm();
+            float ff1 = std::max( 0.0f, norm1.dot(vec3f(0.0, 0.0, 0.0)-dn));
+            float ff2 = std::max( 0.0f, norm2.dot(dn));
+            
+            ff = ff1 * ff2;
+            //                  ff = std::max( 0.0f, ff );
+            //                      std::cout << "ff: " << ff << "\n";
+            //dist_cull = ff < 0.01;
+        }
+        
+        
+        
+        //dist_cull = false;
+        
+        
+        
+        ff /=  (3.1415 * d2);
+        
+        //              os << ff << "\n";
+        
+        dist_cull = ff < 5e-5;
+        
+        if ( !dist_cull && i != j ) {
+            
+            if ( util::occluded( p1 + norm1, p2 + norm2, solid_ )) {
+                //                  os << "0 ";
+                continue;
+            }
+            
+            //                  pairs_.push_back(std::make_pair(i,j));
+            //
+            //
+            //                  ffs_.push_back(ff);// / (3.1415 * d2));
+            ff_tmp.push_back(ff);
+            target_tmp.push_back(j);
+            
+            // j < i => ff2s_[j] is already initialized.
+            ff2s_[j].push_back(ff);
+            ff2_target_[j].push_back(i);
+            
+            //                  minj = std::min( minj, j );
+            //                  maxj = std::max( maxj, j );
+            ++num_ff;
+            //                  os << "1 ";
+        } else {
+            os << "0 ";
+        }
+        
+        }
+        
+        ff2s_[i].assign(ff_tmp.begin(), ff_tmp.end());
+        ff2_target_[i].assign(target_tmp.begin(), target_tmp.end());
+        
+        
+        os << "\n";
+        
+        //std::cout << "i: " << i << " " << num_ff << " " << minj << " - " << maxj << "\n";
+    }
+    
+    
+    
+    
+    
+    
+    std::cout << "num interactions (half): " << num_ff << "\n";
+    
+    return light_static( std::move( ff2s_ ), std::move( ff2_target_ ));
+}
+
+class light_dynamic {
+public:
+    light_dynamic() {}
+    light_dynamic( size_t num ) : emit_( num ), rad_( num ) {}
+    
+    void clear_emit() {
+        std::fill( emit_.begin(), emit_.end(), vec3f(0.0, 0.0, 0.0));
+    }
+
+    std::vector<vec3f> *emit() {
+        return &emit_;
+    }
+    
+    std::vector<vec3f> *rad() {
+        return &rad_;
+    }
+    
+private:
+    std::vector<vec3f> emit_;
+    std::vector<vec3f> rad_;
+    
+    
+};
+
 class rad_core_threaded: public rad_core {
     //typedef std::mutex lock_type;
     typedef spinlock_mutex lock_type;
@@ -872,7 +1791,7 @@ public:
     std::vector<std::pair<size_t,size_t>> calc_plane_distribution( const size_t num_partition ) {
         size_t num_ints = 0;
         std::vector<std::pair<size_t,size_t>> parts;
-        for( auto &ff : ffs_ ) {
+        for( auto &ff : light_static_.f_fact() ) {
             num_ints += ff.size();
         }
         
@@ -884,8 +1803,8 @@ public:
         size_t last = 0;
         size_t acc = 0;
         for( size_t i = 0; i < num_partition; ++i ) {
-            while( last < ffs_.size() && acc < ints_per_part ) {
-                acc += ffs_[last].size();
+            while( last < light_static_.f_fact().size() && acc < ints_per_part ) {
+                acc += light_static_.f_fact()[last].size();
                 ++last;
             }
             acc = 0;
@@ -893,7 +1812,7 @@ public:
             first = last;
         }
         
-        parts.back().second = ffs_.size();
+        parts.back().second = light_static_.f_fact().size();
         
         
         for( auto &p : parts ) { 
@@ -902,12 +1821,15 @@ public:
         return parts;
     }
 
-    rad_core_threaded( const std::vector<plane> &planes, const std::vector<std::vector<float> > &ffs, const std::vector<std::vector<int> > &ff_target )
-            : rad_is_new_(false),
+    rad_core_threaded( const scene_static &scene_static, const light_static &light_static /*, const std::vector<std::pair<size_t,size_t>> &part_bounds */)
+            : 
+            scene_static_(scene_static),
+            light_static_(light_static),
+            rad_is_new_(false),
             emit_is_new_(false),
-            emit_new_(planes.size()), emit_( planes.size() ), rad_( planes.size() ), rad2_( planes.size() ),
-            ffs_(ffs), ff_target_(ff_target),
-            planes_(planes),
+            emit_new_(light_static.num_planes()), emit_( light_static.num_planes() ), rad_( light_static.num_planes() ), rad2_( light_static.num_planes() ),
+            //ffs_(ffs), ff_target_(ff_target),
+            //planes_(planes),
             pints_(0),
             pints_last_(0),
             pints_last_time_(0)
@@ -917,13 +1839,14 @@ public:
         
         if ( !true ) {
             threads_.push_back( std::thread( [&]() {
-                work(0, planes_.size(), 0);
+                work(0, scene_static_.planes().size(), 0);
             }) );
 
 //          thread0_ = std::thread( [&]() { work(0, planes_.size()/4);
 //          });
         } else {
-            const size_t num_planes = planes_.size();
+#if 1
+            const size_t num_planes = scene_static_.planes().size();
             const size_t num_threads = 2;
             
             auto part = calc_plane_distribution(num_threads);
@@ -942,6 +1865,27 @@ public:
                     work( first, last, i );
                 }));
             }
+#else
+            
+            const size_t num_threads = part_bounds.size();
+            
+            
+            for ( size_t i = 0; i < num_threads; ++i ) {
+                
+                
+                
+                //const size_t first = num_planes / num_threads * i;
+                //const size_t last = num_planes / num_threads * (i+1);
+                const size_t first = part_bounds.at(i).first;
+                const size_t last = part_bounds.at(i).second;
+            
+                std::cout << "thread: " << i << " " << first << " " << last <<  "\n";
+                
+                threads_.push_back( std::thread( [=]() {
+                    work( first, last, i );
+                }));
+            }
+#endif
 
 //          thread0_ = std::thread( [&]() { work(0, planes_.size()/4);
 //          });
@@ -1044,6 +1988,10 @@ private:
 
         //std::copy( emit_sse_.begin(), emit_sse_.end(), e_rad_sse_.begin() );
 
+        const std::vector<std::vector<float> > &ffs_ = light_static_.f_fact();
+        const std::vector<std::vector<int> > &ff_target_ = light_static_.f_target();
+        const std::vector<plane> &planes_ = scene_static_.planes();
+        
         typedef vector_unit<float,4> vu;
         typedef vu::vec_t vec_t;
         //steps = 0;
@@ -1111,6 +2059,9 @@ private:
 
     std::vector<std::thread> threads_;
 
+    const scene_static &scene_static_;
+    const light_static &light_static_;
+    
     bool rad_is_new_;
     bool emit_is_new_;
 
@@ -1118,388 +2069,12 @@ private:
     aligned_buffer<col3f_sse> emit_;
     aligned_buffer<col3f_sse> rad_;
     aligned_buffer<col3f_sse> rad2_;
-    const std::vector<std::vector<float> > &ffs_;
-    const std::vector<std::vector<int> > &ff_target_;
-    const std::vector<plane> &planes_;
+    
     size_t pints_;
     size_t pints_last_;
     cl_ubyte64 pints_last_time_;
 };
 
-
-
-class light_scene {
-public:
-    light_scene( const std::vector<plane> &planes, const bitmap3d &solid )
-            : planes_(planes), solid_(solid)
-    {
-
-
-        emit_rgb_.resize( planes_.size() );
-        e_rad_rgb_.resize( planes_.size() );
-        e_rad2_rgb_.resize( planes_.size() );
-
-        emit_sse_.resize( planes_.size() );
-        e_rad_sse_.resize( planes_.size() );
-        e_rad2_sse_.resize( planes_.size() );
-
-        glMapBuffer(GL_ARRAY_BUFFER, GL_WRITE_ONLY);
-        if ( false ) {
-            setup_formfactors();
-            {
-                std::ofstream os( "ff.bin" );
-
-
-                write_formfactors(os);
-
-            }
-        } else {
-            try
-            {
-
-
-                std::ifstream is( "ff.bin" );
-                if ( !is.good() ) {
-                    throw std::runtime_error( "cannot open ff.bin");
-                }
-                read_formfactors(is);
-
-            } catch ( std::runtime_error x ) {
-                std::cerr << x.what() << "\n";
-                std::cerr << "error while reading ff.bin. regenerating\n";
-                setup_formfactors();
-            }
-        }
-
-
-        rad_core_ = make_unique<rad_core_threaded>(planes_, ff2s_, ff2_target_);
-
-    }
-
-
-    void reset_emit() {
-        std::fill( emit_rgb_.begin(), emit_rgb_.end(), vec3f(0.0, 0.0, 0.0));
-    }
-
-    void render_light( const vec3f &light_pos, const vec3f &light_color ) {
-        //std::fill( emit_rgb_.begin(), emit_rgb_.end(), vec3f(0.2, 0.2, 0.2 ));
-        std::fill( emit_rgb_.begin(), emit_rgb_.end(), vec3f(0.0, 0.0, 0.0 ));
-        for ( size_t i = 0; i < planes_.size(); ++i ) {
-
-            auto &p = planes_[i];
-
-            vec3f trace_pos = p.pos() + p.norm();
-
-            const bool occ = true && util::occluded( light_pos, trace_pos, solid_ );
-
-
-            if ( !occ ) {
-                vec3f d = light_pos - p.pos();
-                d.normalize();
-                float len = d.length();
-                d /= len;
-                float dot = d.dot( p.norm() );
-
-                if ( dot > 0 ) {
-                    emit_rgb_[i] += (p.col_diff() * light_color) * dot * (5/(2*3.1415*len*len));
-                }
-
-            }
-        }
-
-        //emit_sse_.assign( emit_rgb_.begin(), emit_rgb_.end() );
-
-
-    }
-
-    void post() {
-        std::copy( emit_rgb_.begin(), emit_rgb_.end(), emit_sse_.begin() );
-    }
-
-    float randf() const {
-        return std::rand() / float(RAND_MAX);
-    }
-
-    void render_emit_patches() {
-        static int x = 0;
-        static int xd = 1;
-        for ( size_t i = 0; i < planes_.size(); ++i ) {
-
-
-
-//          if( randf() > 0.9 ) {
-//              emit_rgb_[i] += vec3f(randf(), randf(), randf());
-//          }
-            if ( (planes_[i].pos().y / 2) == x ) {
-                //if( planes_[i].dir() == plane::dir_zx_p ) {
-                emit_rgb_[i] += planes_[i].col_diff();
-            }
-
-
-        }
-        x += xd;
-        if ( x > 15 || x == 0) {
-            xd = -xd;
-        }
-
-    }
-
-
-    void do_radiosity( int steps = 10,  float min_ff = 0.0 ) {
-        // TODO: rename and/or remove parameters
-        rad_core_->set_emit( emit_rgb_ );
-//         rad_core_->update();
-        rad_core_->copy( &e_rad_rgb_ );
-        return;
-
-    }
-
-
-
-    const vec3f &rad_rgb( size_t i ) {
-        return e_rad_rgb_[i];
-    }
-
-    const std::vector<vec3f> &rad_rgb() const {
-        return e_rad_rgb_;
-    }
-     
-    
-private:
-    inline bool normal_cull( const plane &pl1, const plane &pl2 ) {
-        const plane::dir_type d1 = pl1.dir();
-        const plane::dir_type d2 = pl2.dir();
-
-        const vec3i &p1 = pl1.pos();
-        const vec3i &p2 = pl2.pos();
-
-        return p1 == p2 ||
-               d1 == d2 ||
-               (d1 == plane::dir_xy_n && d2 == plane::dir_xy_p && p1.z < p2.z) ||
-               (d1 == plane::dir_xy_p && d2 == plane::dir_xy_n && p1.z > p2.z) ||
-               (d1 == plane::dir_yz_n && d2 == plane::dir_yz_p && p1.x < p2.x) ||
-               (d1 == plane::dir_yz_p && d2 == plane::dir_yz_n && p1.x > p2.x) ||
-               (d1 == plane::dir_zx_n && d2 == plane::dir_zx_p && p1.y < p2.y) ||
-               (d1 == plane::dir_zx_p && d2 == plane::dir_zx_n && p1.y > p2.y);
-
-    }
-
-    void write_formfactors( std::ostream &os ) {
-        size_t size1 = ff2s_.size();
-
-        os.write((char*) &size1, sizeof(size_t));
-        for ( size_t i = 0; i < size1; ++i ) {
-            size_t size2 = ff2s_[i].size();
-            os.write((char*) &size2, sizeof(size_t));
-
-            os.write( (char*) ff2s_[i].data(), size2 * sizeof(float));
-            os.write( (char*) ff2_target_[i].data(), size2 * sizeof(int));
-        }
-
-    }
-
-    void read_formfactors( std::istream &is ) {
-        size_t size1;
-        is.read( (char *) &size1, sizeof( size_t ));
-
-        if ( size1 != planes_.size() ) {
-            throw std::runtime_error( "cannot read form factors: size1 != planes_.size()");
-        }
-
-
-        std::vector<std::vector<float> > ff2s(size1);
-        std::vector<std::vector<int> > ff2_target(size1);
-
-
-        for ( size_t i = 0; i < size1; ++i ) {
-            size_t size2;
-
-            is.read( (char *) &size2, sizeof( size_t ));
-
-            if ( size2 > planes_.size() ) {
-                throw std::runtime_error( "cannot read form factors: size2 != planes_.size()");
-            }
-
-            ff2s[i].resize(size2);
-            ff2_target[i].resize(size2);
-
-            is.read( (char*) ff2s[i].data(), size2 * sizeof(float));
-            is.read( (char*) ff2_target[i].data(), size2 * sizeof(int));
-
-            std::for_each(ff2_target[i].begin(), ff2_target[i].end(), [&](int t) {
-                if ( size_t(t) >= planes_.size() ) {
-                    throw std::runtime_error( "cannot read form factors: target out of range");
-                }
-            });
-        }
-
-        // exception safe!
-        ff2s_.swap( ff2s );
-        ff2_target_.swap( ff2_target );
-
-    }
-
-    void setup_formfactors() {
-
-//      std::ofstream os( "ff.txt" );
-
-        std::ofstream os;//( "matrix.pnm");
-        os << "P1\n";
-        os << planes_.size() << " " << planes_.size() << "\n";
-
-        ff2s_.resize(planes_.size());
-        ff2_target_.resize(planes_.size());
-
-        std::vector<float> ff_tmp;
-        std::vector<int> target_tmp;
-        size_t num_ff = 0;
-
-        for ( size_t i = 0; i < planes_.size(); ++i ) {
-            vec3i p1 = planes_.at(i).pos();
-
-
-            vec3f norm1 = planes_[i].norm();
-            vec3f p1f = p1;//(p1 + norm1 * 0.5);
-
-//             size_t minj = size_t(-1);
-//             size_t maxj = 0;
-
-
-
-            ff_tmp.clear();
-            target_tmp.clear();
-
-            for ( size_t j = 0; j < i /*planes_.size()*/; ++j ) {
-
-                //                  std::cerr << "i: " << i << " " << j << "\n";
-
-
-                if ( normal_cull( planes_[i], planes_[j] )) {
-//                  os << "0 ";
-                    continue;
-                }
-
-//              if( planes_[i].normal_cull(planes_[j])) {
-//                  os << "0 ";
-//                  continue;
-//              }
-
-                const vec3i &p2 = planes_[j].pos();
-
-
-                const vec3f &norm2 = planes_[j].norm();
-                vec3f p2f = p2;// + (norm2 * 0.5);
-
-                float d2 = dist_sqr( p1f, p2f );
-
-
-
-                bool dist_cull = false;
-
-
-                float ff = 0;
-                {
-
-
-                    vec3f dn = (p1f - p2f).normalize();
-                    //std::cout << p1_3d << " " << p2_3d << " " << dn << "\n";
-                    //.norm();
-                    float ff1 = std::max( 0.0f, norm1.dot(vec3f(0.0, 0.0, 0.0)-dn));
-                    float ff2 = std::max( 0.0f, norm2.dot(dn));
-
-                    ff = ff1 * ff2;
-//                  ff = std::max( 0.0f, ff );
-                    //                      std::cout << "ff: " << ff << "\n";
-                    //dist_cull = ff < 0.01;
-                }
-
-
-
-                //dist_cull = false;
-
-
-
-                ff /=  (3.1415 * d2);
-
-//              os << ff << "\n";
-
-                dist_cull = ff < 5e-5;
-
-                if ( !dist_cull && i != j ) {
-
-                    if ( util::occluded( p1 + norm1, p2 + norm2, solid_ )) {
-                        //                  os << "0 ";
-                        continue;
-                    }
-
-//                  pairs_.push_back(std::make_pair(i,j));
-//
-//
-//                  ffs_.push_back(ff);// / (3.1415 * d2));
-                    ff_tmp.push_back(ff);
-                    target_tmp.push_back(j);
-
-                    // j < i => ff2s_[j] is already initialized.
-                    ff2s_[j].push_back(ff);
-                    ff2_target_[j].push_back(i);
-
-//                  minj = std::min( minj, j );
-//                  maxj = std::max( maxj, j );
-                    ++num_ff;
-//                  os << "1 ";
-                } else {
-                    os << "0 ";
-                }
-
-            }
-
-            ff2s_[i].assign(ff_tmp.begin(), ff_tmp.end());
-            ff2_target_[i].assign(target_tmp.begin(), target_tmp.end());
-            os << "\n";
-
-            //std::cout << "i: " << i << " " << num_ff << " " << minj << " - " << maxj << "\n";
-        }
-
-
-
-
-
-
-        std::cout << "num interactions (half): " << num_ff << "\n";
-
-//      throw std::runtime_error("xxx");
-
-//      e_emit.resize(patches_.size());
-//      e_rad.resize(patches_.size());
-//
-//      e_emit_rgb.resize(patches_.size());
-//
-//
-//      col_diff.resize(patches_.size());
-
-    }
-
-    const std::vector<plane> planes_;
-    const bitmap3d solid_;
-
-
-    std::vector<vec3f> emit_rgb_;
-    std::vector<vec3f> e_rad_rgb_;
-    std::vector<vec3f> e_rad2_rgb_;
-
-
-    aligned_buffer<col3f_sse> emit_sse_;
-    aligned_buffer<col3f_sse> e_rad_sse_;
-    aligned_buffer<col3f_sse> e_rad2_sse_;
-
-
-
-    std::vector<std::vector<float> > ff2s_;
-    std::vector<std::vector<int> > ff2_target_;
-
-    std::unique_ptr<rad_core> rad_core_;
-
-};
 
 
 class input_mapper {
@@ -2015,19 +2590,43 @@ public:
 //         glColorPointer(
 
         std::ifstream is( "cryistal-castle-hidden-ramp.txt" );
-//         std::ifstream is( "house1.txt" );
+     //    std::ifstream is( "house1.txt" );
         //std::ifstream is( "cryistal-castle-tree-wave.txt" );
 
         assert( is.good() );
         height_fields_ = load_crystal(is);
         std::cout << "hf: " << height_fields_.size() << "\n";
         
-        init_solid(height_fields_);
+        
+        
+        scene_static_.init_solid(height_fields_);
         
         
 
-        init_planes();
+        scene_static_.init_planes();
 
+        uint64_t scene_hash = scene_static_.hash();
+        
+        try {
+            std::ifstream is( "ff.bin" );
+            
+            
+            light_static_ = light_static( is, scene_hash );
+        } catch( std::runtime_error x ) {
+            
+            std::cerr << "load failed. recreating. error:\n" << x.what() << std::endl;
+            
+            light_static_ = setup_formfactors(scene_static_.planes(), scene_static_.solid());    
+        }
+        
+        if( !false ) {
+            std::ofstream os( "ff.bin" );
+            light_static_.write(os, scene_hash);
+        }
+        
+        
+        light_dynamic_ = light_dynamic(scene_static_.planes().size() );
+        
         CL_OpenGLWindowDescription desc;
         desc.set_size( CL_Size( 1024, 768 ), true );
 
@@ -2168,8 +2767,8 @@ public:
     void render_quads() {
         assert(false && "out of order" );
         glBegin(GL_QUADS);
-        for ( size_t i = 0; i < planes_.size(); ++i ) {
-            plane &p = planes_[i];
+        for ( size_t i = 0; i < scene_static_.planes().size(); ++i ) {
+            const plane &p = scene_static_.planes()[i];
 
 //          p.energy_rgb(ls.rad_rgb(i));
 
@@ -2212,7 +2811,7 @@ public:
 
         int steps = 1;
 
-        light_scene ls( planes_, solid_ );
+        //light_scene ls( planes_, solid_ );
 
 
         auto t_old = CL_System::get_microseconds();
@@ -2226,9 +2825,9 @@ public:
         vertex_array_builder vab;
 //         vab.render(planes_.begin(), planes_.end() );
         
-        vbo_builder vbob(planes_.size());
-        vbob.update_index_buffer(planes_.size());
-        vbob.update_vertices( planes_.begin(), planes_.end());
+        vbo_builder vbob(scene_static_.planes().size());
+        vbob.update_index_buffer(scene_static_.planes().size());
+        vbob.update_vertices( scene_static_.planes().begin(), scene_static_.planes().end());
         
         cl::Buffer buf;
         try {
@@ -2237,11 +2836,11 @@ public:
             assert( cl_err == CL_SUCCESS );
         
         
-            cl_fcolor_ = cl::Buffer( cl_context_, CL_MEM_READ_ONLY, planes_.size() * 3 * sizeof(float) );
+            cl_fcolor_ = cl::Buffer( cl_context_, CL_MEM_READ_ONLY, scene_static_.planes().size() * 3 * sizeof(float) );
             
             cl_kernel_.setArg(0, buf() );
             cl_kernel_.setArg(1, cl_fcolor_ );
-            cl_uint cl_color_size = planes_.size();
+            cl_uint cl_color_size = scene_static_.planes().size();
             cl_kernel_.setArg(2, cl_color_size );
             
             
@@ -2252,6 +2851,7 @@ public:
         }
         bool light_changed = true;
         
+        rad_core_ = make_unique<rad_core_threaded>( scene_static_, light_static_ );
         
         
         while ( true ) {
@@ -2322,7 +2922,9 @@ public:
             //          light_planes(vec3i(light_x, 10, 10 ));
             
             if( light_changed ) {
-                ls.reset_emit();
+                //ls.reset_emit();
+                light_dynamic_.clear_emit();
+                
                 //ls.render_light(vec3f( 40, 50.0, light_x ), vec3f(1.0, 1.0, 1.0 ));
                 if ( light_on ) {
                     //ls.render_light(light_pos, vec3f(1.0, 0.8, 0.6 ));
@@ -2331,22 +2933,23 @@ public:
                     
                     //              vec3f light_pos = (p1.pos()* pump_factor_) - base_pos_;
                     vec3f light_weird = (light_pos * pump_factor_) - base_pos_;
-                    ls.render_light( light_weird, vec3f(1.0, 0.8, 0.6 ));
+                    light_utils::render_light( light_dynamic_.emit(), scene_static_, light_weird, vec3f(1.0, 0.8, 0.6 ));
                 }
-                ls.post();
+                //ls.post();
                 light_changed = false;
             }
             
-
+            rad_core_->set_emit( *light_dynamic_.emit() );
             //ls.render_emit_patches();
 
-            steps = 1;
-            ls.do_radiosity( steps );
+            //steps = 1;
+            //ls.do_radiosity( steps );
 
+            rad_core_->copy( light_dynamic_.rad() );
              // stupid: transfer rgb energy fomr light scene to planes
-            for ( size_t i = 0; i < planes_.size(); ++i ) {
-                plane &p = planes_[i];
-                p.energy_rgb(ls.rad_rgb(i));
+            for ( size_t i = 0; i < scene_static_.planes().size(); ++i ) {
+                plane &p = const_cast<plane &>(scene_static_.planes()[i]); // FIXME: HACK!!! is the energy_rgp stored in the planes actually used? remove it!
+                p.energy_rgb((*light_dynamic_.rad())[i]);
             }
             
             light_x += light_xd;
@@ -2365,7 +2968,7 @@ public:
             try
             {
                 glFinish();
-                const auto &rad_colors = ls.rad_rgb();
+                const auto &rad_colors = *light_dynamic_.rad();
                 
                 cl_cqueue_.enqueueWriteBuffer( cl_fcolor_, false, 0, rad_colors.size() * sizeof(vec3f), rad_colors.data() );
                 
@@ -2375,7 +2978,7 @@ public:
 
                 // Set arg 3 and execute the kernel
                 
-                cl_cqueue_.enqueueNDRangeKernel( cl_kernel_, 0, cl::NDRange(planes_.size()) );
+                cl_cqueue_.enqueueNDRangeKernel( cl_kernel_, 0, cl::NDRange(scene_static_.planes().size()) );
                 
                                
 
@@ -2454,174 +3057,40 @@ public:
 
 private:
 
-    void init_solid( const std::vector<ublas::matrix<int>> &slices ) {
-        const auto &slice0 = slices.at(0);
-        size_t size_z = slice0.size1();
-        size_t size_x = slice0.size2();
-        
-        size_t size_y = *std::max_element( slice0.data().begin(), slice0.data().end() ) + 1;
-        
-        std::cout << "size: " << size_x << " " << size_z << " " << size_y << "\n";
-        
-        solid_ = bitmap3d( size_x, size_y, size_z );
-        
-        bool add = true;
-        for( auto &slice : slices ) {
-        
-            int starty = 0;
-            
-            // kind of hack: do not touch blocks below the 1-level in subtractive passes,
-            // to prevent drilling the ground plane...
-            if( !add ) {
-                starty = 1;
-            }
-            
-            for ( int y = starty; y < int(size_y); ++y ) {
-                for ( size_t z = 0; z < size_z; ++z ) {
-                    for ( size_t x = 0; x < size_x; ++x ) {
-                        int h = slice(z,x);
-
-                        
-                        if ( h >= y ) {
-                            solid_(x, y, z) = add;
-                        }    
-//                         solid_(x, y, z) = true;
-                        
-                        
-                    }
-                }
-            }
-            
-            add = !add;
-        }
-    }
-        
+    
         
 
 
-    void init_planes() {
 
-//         size_t size_z = height_.size();
-//         size_t size_x = height_.front().size();
-//         int size_y = 0;
+
+//     void light_planes( const vec3i &light_pos ) {
+//         for ( plane &p : planes_ ) {
 // 
-//         for ( auto it = height_.begin(); it != height_.end(); ++it ) {
-//             size_y = std::max( size_y, (*std::max_element(it->begin(), it->end())) + 1 );
-//         }
+//             vec3f trace_pos = p.pos() + p.norm();
 // 
-//         std::cout << "solid: " << size_x << " " << size_y << " " << size_z << "\n";
-// 
-//         solid_ = bitmap3d( size_x, size_y, size_z );
+//             const bool occ = true && util::occluded( light_pos, trace_pos, solid_ );
 // 
 // 
-//         //vec3f base_pos;
-//         
+//             if ( !occ ) {
+//                 vec3f d = light_pos - p.pos();
+//                 d.normalize();
+//                 float len = d.length();
+//                 d /= len;
+//                 float dot = d.dot( p.norm() );
 // 
-// 
-//         for ( int y = 0; y < size_y; ++y ) {
-//             for ( size_t z = 0; z < height_.size(); ++z ) {
-//                 for ( size_t x = 0; x < height_[z].size(); ++x ) {
-//                     int h = height_[z][x];
-// 
-// 
-//                     if ( h >= y ) {
-//                         solid_(x, y, z) = true;
-//                     }
-// 
-// 
+//                 if ( dot > 0 ) {
+//                     p.energy( dot * (10/(2*3.1415*len*len)));
+//                 } else {
+//                     p.energy(0.1);
 //                 }
+// 
+//             } else {
+//                 p.energy( 0.1 );
 //             }
+// 
+// 
 //         }
-        
-        //vec3f base_pos( -10.5, -10.5, -10.5);
-        vec3f base_pos( -(solid_.x() / 2.0 + 0.5), -10.5, -(solid_.z() / 2.0 + 0.5));
-        base_pos_ = base_pos;
-        
-//         std::cout << "base pos: " << base_pos_ << " " << solid_.x() << "\n";
-        
-        const auto &solidc = solid_;
-
-        vec3i light_pos( 10, 10, 10 );
-        float scale = 1.0 / pump_factor_;
-
-        for ( int y = 0; y < int(solid_.y()); ++y ) {
-            for ( size_t z = 0; z < solid_.z(); ++z ) {
-                for ( size_t x = 0; x < solid_.x(); ++x ) {
-                    if ( solid_(x, y, z) ) {
-
-                        const bool occ = util::occluded( light_pos, vec3i(x,y,z), solid_ );
-
-                        float energy = occ ? 0.2 : 1.0;
-
-
-
-                        if ( !solidc(x,y,z+1)) {
-                            planes_.push_back( plane( plane::dir_xy_p, base_pos, vec3i( x, y, z ), scale, energy));
-                        }
-                        if ( !solidc(x,y,z-1)) {
-                            planes_.push_back( plane( plane::dir_xy_n, base_pos, vec3i( x, y, z ), scale, energy));
-                        }
-                        if ( !solidc(x+1,y,z)) {
-                            planes_.push_back( plane( plane::dir_yz_p, base_pos, vec3i( x, y, z ), scale, energy));
-                        }
-                        if ( !solidc(x-1,y,z)) {
-                            planes_.push_back( plane( plane::dir_yz_n, base_pos, vec3i( x, y, z ), scale, energy));
-                        }
-                        if ( !solidc(x,y+1,z)) {
-                            planes_.push_back( plane( plane::dir_zx_p, base_pos, vec3i( x, y, z ), scale, energy));
-                        }
-                        if ( y > 0 && !solidc(x,y-1,z)) {
-                            planes_.push_back( plane( plane::dir_zx_n, base_pos, vec3i( x, y, z ), scale, energy));
-                        }
-
-
-                    }
-                }
-            }
-        }
-//      for( size_t z = 0; z < height_.size(); ++z ) {
-//          for( size_t x = 0; x < height_[z].size(); ++x ) {
-//              planes_.push_back( plane( plane::dir_zx_n, base_pos, vec3i( x, 20, z ), 0.0));
-//          }
-//      }
-
-
-        std::cout << "planes: " << planes_.size() << "\n";
-
-
-
-
-    }
-
-
-    void light_planes( const vec3i &light_pos ) {
-        for ( plane &p : planes_ ) {
-
-            vec3f trace_pos = p.pos() + p.norm();
-
-            const bool occ = true && util::occluded( light_pos, trace_pos, solid_ );
-
-
-            if ( !occ ) {
-                vec3f d = light_pos - p.pos();
-                d.normalize();
-                float len = d.length();
-                d /= len;
-                float dot = d.dot( p.norm() );
-
-                if ( dot > 0 ) {
-                    p.energy( dot * (10/(2*3.1415*len*len)));
-                } else {
-                    p.energy(0.1);
-                }
-
-            } else {
-                p.energy( 0.1 );
-            }
-
-
-        }
-    }
+//     }
 
     
     void init_opencl() {
@@ -2747,8 +3216,7 @@ private:
     
     std::vector<ublas::matrix<int>> height_fields_;
     
-    std::vector<plane> planes_;
-    bitmap3d solid_;
+//     
 
     const size_t pump_factor_;
     vec3f base_pos_;
@@ -2762,6 +3230,13 @@ private:
     
     cl::CommandQueue cl_cqueue_;
     cl::Buffer cl_fcolor_;
+    
+    scene_static scene_static_;
+    
+    light_static light_static_;
+    light_dynamic light_dynamic_;
+    
+    std::unique_ptr<rad_core> rad_core_;
 };
 
 
