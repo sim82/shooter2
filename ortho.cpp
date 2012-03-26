@@ -1526,10 +1526,12 @@ public:
 
 class light_static {
 public:
+    typedef std::pair<float,int> ff_pair;
+    
     light_static() {}
     
     light_static( std::vector<std::vector<float> > && f_fact, std::vector<std::vector<int> > && f_target ) 
-    : f_fact_(f_fact), f_target_(f_target)
+    : f_fact_(f_fact), f_target_(f_target) /*, f_pairs_(init_pairs(f_fact_, f_target_))*/
     {}
     
     light_static( std::istream &is, uint64_t hash ) {
@@ -1583,6 +1585,8 @@ public:
             });
         }
 
+        
+//         f_pairs_ = init_pairs(f_fact_, f_target_);
     }
     
     void write( std::ostream &os, uint64_t hash ) {
@@ -1614,10 +1618,34 @@ public:
         return f_target_;
     }
 
+//     const std::vector<std::vector<ff_pair> > &f_pairs() const {
+//         return f_pairs_;
+//     }
+    
     
 private:
+//     static std::vector<std::vector<ff_pair> > init_pairs( const std::vector<std::vector<float> > &fact, const std::vector<std::vector<int> > &target ) {
+//         std::vector<std::vector<ff_pair> > pairs( fact.size() );
+//         assert( fact.size() == target.size() );
+//         for( size_t i = 0; i < fact.size(); ++i ) {
+//             assert( fact[i].size() == target[i].size() );
+//             
+//             pairs[i].reserve(fact.size());
+//             for( size_t j = 0; j < fact[i].size(); ++j ) {
+//                 
+//                 
+//                 pairs[i].emplace_back( fact[i][j], target[i][j] );
+//             }
+//         }
+//     
+//         
+//         return pairs;
+//     }
+    
     std::vector<std::vector<float> > f_fact_;
     std::vector<std::vector<int> > f_target_;
+    
+//     std::vector<std::vector<ff_pair> > f_pairs_;
 
 };
 
@@ -1755,6 +1783,26 @@ static light_static setup_formfactors( const std::vector<plane> &planes_, const 
     return light_static( std::move( ff2s_ ), std::move( ff2_target_ ));
 }
 
+template<typename IDX>
+std::vector<IDX> ff_size_sort_permutation( const std::vector<std::vector<float>> &ffs ) 
+{
+        typedef std::pair<size_t,size_t> ss_pair;
+        std::vector<ss_pair> fs;
+        for( size_t i = 0; i < ffs.size(); ++i ) {
+            //std::cout << "ffs: " << i << " " << ff2s_[i].size() << "\n";
+            fs.emplace_back( ffs[i].size(), i );
+        }
+        
+        std::sort( fs.begin(), fs.end(), []( const ss_pair &p1, const ss_pair &p2 ) { return p1.first == p2.first ? p1.second < p2.second : p1.first < p2.first; } );
+        
+        std::vector<IDX> perm_size(fs.size());
+        perm_size.resize(fs.size());
+        
+        std::transform( fs.begin(), fs.end(), perm_size.begin(), [](const ss_pair &p) { return p.second; } );
+      
+        return perm_size;
+}
+
 class light_dynamic {
 public:
     light_dynamic() {}
@@ -1780,8 +1828,8 @@ private:
 };
 
 class rad_core_threaded: public rad_core {
-    //typedef std::mutex lock_type;
-    typedef spinlock_mutex lock_type;
+    typedef std::mutex lock_type;
+    //typedef spinlock_mutex lock_type;
 public:
     class worker {
 
@@ -1835,7 +1883,7 @@ public:
             pints_last_time_(0)
     {
 
-        return;
+        
         
         if ( !true ) {
             threads_.push_back( std::thread( [&]() {
@@ -1847,7 +1895,7 @@ public:
         } else {
 #if 1
             const size_t num_planes = scene_static_.planes().size();
-            const size_t num_threads = 2;
+            const size_t num_threads = 3;
             
             auto part = calc_plane_distribution(num_threads);
             for ( size_t i = 0; i < num_threads; ++i ) {
@@ -1990,6 +2038,8 @@ private:
 
         const std::vector<std::vector<float> > &ffs_ = light_static_.f_fact();
         const std::vector<std::vector<int> > &ff_target_ = light_static_.f_target();
+//         auto &ff_pairs = light_static_.f_pairs();
+        
         const std::vector<plane> &planes_ = scene_static_.planes();
         
         typedef vector_unit<float,4> vu;
@@ -2005,28 +2055,70 @@ private:
 
             for ( size_t j = first; j < last; ++j ) {
 
-                const size_t s = ffs_[j].size();
+//                 const size_t s = (ffs_[j].size() / 4) * 4;
+
+                const bool unroll = !false;
+                const size_t send_unroll = (ffs_[j].size() / 4) * 4;
+                const size_t send = ffs_[j].size();
+                size_t sstart = 0;
                 vec_t rad = vu::set1(0);
+                vec_t rad2 = vu::set1(0);
+                vec_t rad3 = vu::set1(0);
+                vec_t rad4 = vu::set1(0);
 
                 const vec3f cd = planes_[j].col_diff();
                 const vec_t col_diff = vu::set( 0, cd.b, cd.g, cd.r );
 
-
-
-                for ( size_t k = 0; k < s; ++k ) {
-                    size_t target = ff_target_[j][k];
-                    //rad_rgb += (col_diff * e_rad_rgb_[target]) * ff2s_[j][k];
-
-                    if ( false && ffs_[j][k] < min_ff ) {
-                        continue;
+                auto &targets = ff_target_[j];
+                auto &ffs = ffs_[j];
+//                 auto &pairs = ff_pairs[j];
+                
+                _mm_prefetch( (char*)targets.data(), _MM_HINT_T0 );
+                _mm_prefetch( (char*)ffs.data(), _MM_HINT_T0 );
+                
+                if( unroll ) {
+                    for ( size_t k = 0; k < send_unroll; k+=4 ) {
+                        size_t target = targets[k];
+                        size_t target2 = targets[k+1];
+                        size_t target3 = targets[k+2];
+                        size_t target4 = targets[k+3];
+                        //auto p = pairs[k];
+                        //size_t target = p.second;
+                        //rad_rgb += (col_diff * e_rad_rgb_[target]) * ff2s_[j][k];
+                        
+                        //                     if ( false && ffs[k] < min_ff ) {
+                            //                         continue;
+                        //                     }
+                        
+                        //const vec_t ff = vu::set1( p.first );
+                        const vec_t ff = vu::set1( ffs[k] );
+                        const vec_t ff2 = vu::set1( ffs[k+1] );
+                        const vec_t ff3 = vu::set1( ffs[k+2] );
+                        const vec_t ff4 = vu::set1( ffs[k+3] );
+                        rad = vu::add( rad, vu::mul( vu::mul( col_diff, vu::load( (float*) rad_(target))), ff ));
+                        rad2 = vu::add( rad2, vu::mul( vu::mul( col_diff, vu::load( (float*) rad_(target2))), ff2 ));
+                        rad3 = vu::add( rad3, vu::mul( vu::mul( col_diff, vu::load( (float*) rad_(target3))), ff3 ));
+                        rad4 = vu::add( rad4, vu::mul( vu::mul( col_diff, vu::load( (float*) rad_(target4))), ff4 ));
+                        
                     }
-
-                    const vec_t ff = vu::set1( ffs_[j][k] );
-
-                    rad = vu::add( rad, vu::mul( vu::mul( col_diff, vu::load( (float*) rad_(target))), ff ));
-
+                    sstart = send_unroll;
                 }
-                pints += s;
+                
+                for ( size_t k = sstart; k < send; ++k ) {
+                    size_t target = targets[k];
+                    
+                    const vec_t ff = vu::set1( ffs[k] );
+                    rad = vu::add( rad, vu::mul( vu::mul( col_diff, vu::load( (float*) rad_(target))), ff ));
+                }
+                
+                
+                pints += send;
+                
+                if( unroll ) {
+                    rad = vu::add( rad, rad2 );
+                    rad3 = vu::add( rad3, rad4 );
+                    rad = vu::add( rad, rad3 );
+                }
                 vu::store( vu::add( vu::load((float*)emit_(j)), vu::mul(rad, reflex_factor)), (float*)rad2_(j));
 //              std::cout << "col: " << rad2_[j].r << " " << cd.r <<  "\n";
                 //e_rad2_rgb_[j] = emit_rgb_[j] + rad_rgb;// * reflex_factor;
@@ -2070,10 +2162,323 @@ private:
     aligned_buffer<col3f_sse> rad_;
     aligned_buffer<col3f_sse> rad2_;
     
+    
+    
     size_t pints_;
     size_t pints_last_;
     cl_ubyte64 pints_last_time_;
 };
+
+class rad_core_lockfree: public rad_core {
+    //typedef std::mutex lock_type;
+    typedef spinlock_mutex lock_type;
+public:
+    class worker {
+
+    };
+
+    
+    std::vector<std::pair<size_t,size_t>> calc_plane_distribution( const size_t num_partition ) {
+        size_t num_ints = 0;
+        std::vector<std::pair<size_t,size_t>> parts;
+        for( auto &ff : light_static_.f_fact() ) {
+            num_ints += ff.size();
+        }
+        
+        std::cout << "num_ints: " << num_ints << "\n";
+        
+        size_t ints_per_part = num_ints / num_partition;
+        
+        size_t first = 0;
+        size_t last = 0;
+        size_t acc = 0;
+        for( size_t i = 0; i < num_partition; ++i ) {
+            while( last < light_static_.f_fact().size() && acc < ints_per_part ) {
+                acc += light_static_.f_fact()[last].size();
+                ++last;
+            }
+            acc = 0;
+            parts.emplace_back( first, last );
+            first = last;
+        }
+        
+        parts.back().second = light_static_.f_fact().size();
+        
+        
+        for( auto &p : parts ) { 
+            std::cout << "part: " << p.first << " " << p.second << "\n";
+        }
+        return parts;
+    }
+
+    rad_core_lockfree( const scene_static &scene_static, const light_static &light_static /*, const std::vector<std::pair<size_t,size_t>> &part_bounds */)
+            : 
+            scene_static_(scene_static),
+            light_static_(light_static),
+            
+            emit_( light_static.num_planes() ), rad_( light_static.num_planes() ), rad2_( light_static.num_planes() ),
+            //ffs_(ffs), ff_target_(ff_target),
+            //planes_(planes),
+            pints_(0),
+            pints_last_(0),
+            pints_last_time_(0)
+    {
+
+        
+        
+        if ( !true ) {
+            threads_.push_back( std::thread( [&]() {
+                work(0, scene_static_.planes().size(), 0);
+            }) );
+
+//          thread0_ = std::thread( [&]() { work(0, planes_.size()/4);
+//          });
+        } else {
+#if 1
+            const size_t num_planes = scene_static_.planes().size();
+            const size_t num_threads = 3;
+            
+            auto part = calc_plane_distribution(num_threads);
+            for ( size_t i = 0; i < num_threads; ++i ) {
+                
+                
+                
+                //const size_t first = num_planes / num_threads * i;
+                //const size_t last = num_planes / num_threads * (i+1);
+                const size_t first = part.at(i).first;
+                const size_t last = part.at(i).second;
+            
+                std::cout << "thread: " << i << " " << first << " " << last << " " << num_planes << "\n";
+                
+                threads_.push_back( std::thread( [=]() {
+                    work( first, last, i );
+                }));
+            }
+#else
+            
+            const size_t num_threads = part_bounds.size();
+            
+            
+            for ( size_t i = 0; i < num_threads; ++i ) {
+                
+                
+                
+                //const size_t first = num_planes / num_threads * i;
+                //const size_t last = num_planes / num_threads * (i+1);
+                const size_t first = part_bounds.at(i).first;
+                const size_t last = part_bounds.at(i).second;
+            
+                std::cout << "thread: " << i << " " << first << " " << last <<  "\n";
+                
+                threads_.push_back( std::thread( [=]() {
+                    work( first, last, i );
+                }));
+            }
+#endif
+
+//          thread0_ = std::thread( [&]() { work(0, planes_.size()/4);
+//          });
+//          thread1_ = std::thread( [&]() { work(planes_.size()/4, planes_.size()/4 * 2);
+//          });
+//          thread2_ = std::thread( [&]() { work(planes_.size()/4 * 2, planes_.size()/4 * 3);
+//          });
+//          thread3_ = std::thread( [&]() { work(planes_.size()/4 * 3, planes_.size()/4 * 4);
+//          });
+        }
+    }
+
+    virtual void set_emit( const std::vector<vec3f> &emit ) {
+        
+
+        //assert( emit_new_.size() == emit.size() );
+
+        emit_.assign( std::begin(emit), std::end(emit));
+        //emit_is_new_ = true;
+    }
+
+    virtual bool update() {
+        //return rad_is_new_;
+        
+        return true;
+//         std::lock_guard<std::mutex> lock(mtx_);
+// 
+//         if ( rad_is_new_ ) {
+//             rad_is_new_ = false;
+//             return true;
+//         } else {
+//             return false;
+//         }
+
+
+    }
+
+    virtual void copy( std::vector<vec3f> *out ) {
+        col3f_sse * rb_src = nullptr;
+        
+        
+        bool dir = buf_dir_.load();
+        
+        if( !dir ) {
+            rb_src = rad_.data();
+         
+        } else {
+            rb_src = rad2_.data();
+         
+        }
+        for ( size_t i = 0; i < rad_.size(); ++i ) {
+            (*out)[i].r = rb_src[i].r;
+            (*out)[i].g = rb_src[i].g;
+            (*out)[i].b = rb_src[i].b;
+        }
+
+        buf_dir_.store(!dir);
+        
+        
+        cl_ubyte64 time = CL_System::get_microseconds();
+        
+        cl_ubyte64 dt = time - pints_last_time_;
+        
+        if( dt >= 1e6 ) {
+            const size_t pt = pints_.load();
+            
+            const size_t dp = pt - pints_last_;
+            pints_last_ = pt;
+            
+            pints_last_time_ = time;
+            
+            std::cout << "pint/s: " << dp / (dt / 1.0e6) << "\n";
+        }
+    }
+
+
+
+
+private:
+
+    void work( size_t first, size_t last, size_t rank ) {
+        while (true) {
+            //std::copy( emit_new_.begin(), emit_new_.end(), emit_.begin() );
+        
+
+//             tick_timer tt;
+            do_radiosity_sse(first, last);
+
+//             std::cout << "elapsed: " << tt.elapsed() << "\n";
+
+//             if( rank == 0 )
+//             {
+//                 std::lock_guard<lock_type> lock(mtx_);
+//                 rad_is_new_ = true;
+//             }
+
+        }
+    }
+
+    void do_radiosity_sse( size_t first, size_t last ) {
+        const int steps = 1;
+        const float min_ff = 0;
+//      std::fill(e_rad_sse_.begin(), e_rad_sse_.end(), vec3f(0.0, 0.0, 0.0));
+//      std::fill(e_rad2_sse_.begin(), e_rad2_sse_.end(), vec3f(0.0, 0.0, 0.0));
+
+        //std::copy( emit_sse_.begin(), emit_sse_.end(), e_rad_sse_.begin() );
+
+        const std::vector<std::vector<float> > &ffs_ = light_static_.f_fact();
+        const std::vector<std::vector<int> > &ff_target_ = light_static_.f_target();
+        const std::vector<plane> &planes_ = scene_static_.planes();
+        
+        typedef vector_unit<float,4> vu;
+        typedef vu::vec_t vec_t;
+        //steps = 0;
+//         std::cout << "do: " << first << " " << last << "\n";
+        vec_t reflex_factor = vu::set1(1.0);
+        
+        size_t pints = 0;
+        for ( int i = 0; i < steps; ++i ) {
+            //for( auto it = pairs_.begin(); it != pairs_.end(); ++it, ++ff_it ) {
+
+
+            for ( size_t j = first; j < last; ++j ) {
+
+                col3f_sse *rb_src = nullptr;
+                col3f_sse *rb_dst = nullptr;
+                
+                if( !buf_dir_.load() ) {
+                    rb_src = rad_.data();
+                    rb_dst = rad2_.data();
+                } else {
+                    rb_src = rad2_.data();
+                    rb_dst = rad_.data();
+                }
+                    
+                
+                
+                const size_t s = ffs_[j].size();
+                vec_t rad = vu::set1(0);
+
+                const vec3f cd = planes_[j].col_diff();
+                const vec_t col_diff = vu::set( 0, cd.b, cd.g, cd.r );
+
+
+
+                for ( size_t k = 0; k < s; ++k ) {
+                    size_t target = ff_target_[j][k];
+                    //rad_rgb += (col_diff * e_rad_rgb_[target]) * ff2s_[j][k];
+
+                    if ( false && ffs_[j][k] < min_ff ) {
+                        continue;
+                    }
+
+                    const vec_t ff = vu::set1( ffs_[j][k] );
+
+                    rad = vu::add( rad, vu::mul( vu::mul( col_diff, vu::load( (float*) (rb_src+target))), ff ));
+
+                }
+                pints += s;
+                vu::store( vu::add( vu::load((float*)emit_(j)), vu::mul(rad, reflex_factor)), (float*)(rb_dst+j));
+//              std::cout << "col: " << rad2_[j].r << " " << cd.r <<  "\n";
+                //e_rad2_rgb_[j] = emit_rgb_[j] + rad_rgb;// * reflex_factor;
+
+            }
+
+            pints_.fetch_add(pints);
+            
+            //rad_ = rad2__;
+
+
+        }
+
+        //e_rad_rgb_.assign( e_rad_sse_.begin(), e_rad_sse_.end() );
+
+
+
+    }
+
+    lock_type mtx_;
+//  std::thread thread0_;
+//  std::thread thread1_;
+//  std::thread thread2_;
+//  std::thread thread3_;
+
+    std::vector<std::thread> threads_;
+
+    const scene_static &scene_static_;
+    const light_static &light_static_;
+    
+//     bool rad_is_new_;
+//     bool emit_is_new_;
+
+//     aligned_buffer<col3f_sse> emit_new_;
+    aligned_buffer<col3f_sse> emit_;
+    aligned_buffer<col3f_sse> rad_;
+    aligned_buffer<col3f_sse> rad2_;
+    
+    std::atomic<bool> buf_dir_;
+    
+    std::atomic<size_t> pints_;
+    size_t pints_last_;
+    cl_ubyte64 pints_last_time_;
+};
+
 
 
 class rad_core_opencl : public rad_core {
@@ -2109,9 +2514,11 @@ public:
         assert( stage_fact.size() == num_facts );
         assert( stage_target.size() == num_facts );
         
-        //pints_iter_ = num_facts;
+        std::vector<cl_int> stage_perm = ff_size_sort_permutation<cl_int>( light_static.f_fact());
+        assert( stage_perm.size() == scene_static.planes().size());
+        pints_iter_ = num_facts;
         
-        pints_iter_ = *std::max_element(stage_num.begin(), stage_num.end()) * stage_num.size();
+        //pints_iter_ = *std::max_element(stage_num.begin(), stage_num.end()) * stage_num.size();
         
         std::vector<cl_float4> stage_col_diff;//( num_planes_ );
         for( auto & p : scene_static.planes() ) {
@@ -2133,16 +2540,30 @@ public:
         
         col_diff_ = cl::Buffer( ctx_, CL_MEM_WRITE_ONLY, stage_col_diff.size() * sizeof(cl_float4) );
         
+        f_perm_ = cl::Buffer( ctx_, CL_MEM_WRITE_ONLY, stage_perm.size() * sizeof(cl_int) );
+        
         queue_.enqueueWriteBuffer( f_fact_, false, 0, num_facts * sizeof(cl_float), stage_fact.data() );
         queue_.enqueueWriteBuffer( f_target_, false, 0, num_facts * sizeof(cl_int), stage_target.data() );
         queue_.enqueueWriteBuffer( f_offsets_, false, 0, stage_offsets.size() * sizeof(cl_int), stage_offsets.data() );
         queue_.enqueueWriteBuffer( f_num_, false, 0, stage_num.size() * sizeof(cl_int), stage_num.data() );
         queue_.enqueueWriteBuffer( col_diff_, false, 0, stage_col_diff.size() * sizeof(cl_float4), stage_col_diff.data() );
-        queue_.finish();
+        queue_.enqueueWriteBuffer( f_perm_, false, 0, stage_perm.size() * sizeof(cl_int), stage_perm.data() );
         
         f_emit_ = cl::Buffer( ctx_, CL_MEM_WRITE_ONLY, light_static.num_planes() * sizeof(cl_float4) );
-        f_rad_ = cl::Buffer( ctx_, CL_MEM_READ_ONLY, light_static.num_planes() * sizeof(cl_float4) );
-        f_rad2_ = cl::Buffer( ctx_, CL_MEM_READ_ONLY, light_static.num_planes() * sizeof(cl_float4) );
+        f_rad_ = cl::Buffer( ctx_, CL_MEM_READ_WRITE, light_static.num_planes() * sizeof(cl_float4) );
+        f_rad2_ = cl::Buffer( ctx_, CL_MEM_READ_WRITE, light_static.num_planes() * sizeof(cl_float4) );
+    
+        {
+            cl_float4 zero = {0.0, 0.0, 0.0, 0.0};
+            std::vector<cl_float4> stage_zero(light_static.num_planes(), zero);
+            
+            queue_.enqueueWriteBuffer( f_rad_, false, 0, light_static.num_planes() * sizeof(cl_float4), stage_zero.data());
+            queue_.enqueueWriteBuffer( f_rad2_, false, 0, light_static.num_planes() * sizeof(cl_float4), stage_zero.data());
+            
+        }
+        
+        queue_.finish();
+        
     }
     
     void load_kernel( cl::Context ctx, const std::vector<cl::Device> &used_devices ) {
@@ -2220,6 +2641,8 @@ public:
             kernel_.setArg(7, f_rad2_);
         }
         
+        kernel_.setArg( 9, f_perm_ );
+        
         queue_.enqueueNDRangeKernel( kernel_, cl::NDRange(0), cl::NDRange(num_planes_) );
         queue_.finish();
         
@@ -2265,6 +2688,8 @@ private:
     cl::Buffer f_emit_;
     cl::Buffer f_rad_;
     cl::Buffer f_rad2_;
+    
+    cl::Buffer f_perm_;
     
     const size_t num_planes_;
     std::vector<cl_float4> stage_;
@@ -3064,7 +3489,7 @@ public:
         }
         bool light_changed = true;
         
-        
+        //rad_core_ = make_unique<rad_core_lockfree>( scene_static_, light_static_ );
         
         while ( true ) {
 
@@ -3151,14 +3576,14 @@ public:
                 light_changed = false;
             }
             
-            rad_core2->set_emit( *light_dynamic_.emit() );
+//             rad_core2->set_emit( *light_dynamic_.emit() );
             rad_core_->set_emit( *light_dynamic_.emit() );
             //ls.render_emit_patches();
 
             //steps = 1;
             //ls.do_radiosity( steps );
 
-            rad_core2->run();
+            //rad_core2->run();
             rad_core_->copy( light_dynamic_.rad() );
              // stupid: transfer rgb energy fomr light scene to planes
             for ( size_t i = 0; i < scene_static_.planes().size(); ++i ) {
@@ -3177,21 +3602,25 @@ public:
 //             vab.update_color( ls.rad_rgb().begin(), ls.rad_rgb().end() );
             
 //             vab.setup_gl_pointers();
-     //       vbob.update_color(ls.rad_rgb().begin(), ls.rad_rgb().end());
-#if 1
+            vbob.update_color(light_dynamic_.rad()->begin(), light_dynamic_.rad()->end());
+#if 0
             try
             {
-                glFinish();
+                cl_int err;
+//                 glFinish();
                 const auto &rad_colors = *light_dynamic_.rad();
-                
+//                 
                 cl_cqueue_.enqueueWriteBuffer( cl_fcolor_, false, 0, rad_colors.size() * sizeof(vec3f), rad_colors.data() );
+//                 
                 
-                cl_int err = clEnqueueAcquireGLObjects( cl_cqueue_(), 1, &(buf()), 0, 0, 0 );
+
+                err = clEnqueueAcquireGLObjects( cl_cqueue_(), 1, &(buf()), 0, 0, 0 );
                 assert( err == CL_SUCCESS );
 
 
                 
-                cl_kernel_.setArg(1, rad_core2->f_rad() );
+                //cl_kernel_.setArg(1, rad_core2->f_rad() );
+                cl_kernel_.setArg(1, cl_fcolor_ );
                 cl_cqueue_.enqueueNDRangeKernel( cl_kernel_, 0, cl::NDRange(scene_static_.planes().size()) );
                 
                                
