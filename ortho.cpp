@@ -33,14 +33,16 @@
 #include <stdexcept>
 
 
-#include <boost/numeric/ublas/matrix.hpp>
-#include <boost/numeric/ublas/matrix_proxy.hpp>
+// #include <boost/numeric/ublas/matrix.hpp>
+// #include <boost/numeric/ublas/matrix_proxy.hpp>
+// #include <boost/numeric/ublas/fwd.hpp>
 
 #include "aligned_buffer.h"
 #include "vec_unit.h"
 #include "misc_utils.h"
 #include "scene_bits.h"
 #include "player_bits.h"
+#include "crystal_bits.h"
 #include "gl_bits.h"
 #include "rad_core.h"
 
@@ -160,140 +162,6 @@ namespace ublas = boost::numeric::ublas;
 
 
 
-
-
-static light_static setup_formfactors( const std::vector<plane> &planes_, const bitmap3d &solid_ ) {
-    
-    //      std::ofstream os( "ff.txt" );
-    
-    std::ofstream os;//( "matrix.pnm");
-    os << "P1\n";
-    os << planes_.size() << " " << planes_.size() << "\n";
-    
-    std::vector<std::vector<float> > ff2s_(planes_.size());
-    std::vector<std::vector<int> > ff2_target_(planes_.size());
-    
-    std::vector<float> ff_tmp;
-    std::vector<int> target_tmp;
-    size_t num_ff = 0;
-    
-    for ( size_t i = 0; i < planes_.size(); ++i ) {
-        vec3i p1 = planes_.at(i).pos();
-        
-        
-        vec3f norm1 = planes_[i].norm();
-        vec3f p1f = p1;//(p1 + norm1 * 0.5);
-        
-        //             size_t minj = size_t(-1);
-        //             size_t maxj = 0;
-        
-        
-        
-        ff_tmp.clear();
-        target_tmp.clear();
-        
-        for ( size_t j = 0; j < i /*planes_.size()*/; ++j ) {
-            
-            //                  std::cerr << "i: " << i << " " << j << "\n";
-            
-            
-            if ( light_utils::normal_cull( planes_[i], planes_[j] )) {
-                //                  os << "0 ";
-                continue;
-            }
-            
-            //              if( planes_[i].normal_cull(planes_[j])) {
-        //                  os << "0 ";
-        //                  continue;
-        //              }
-        
-        const vec3i &p2 = planes_[j].pos();
-        
-        
-        const vec3f &norm2 = planes_[j].norm();
-        vec3f p2f = p2;// + (norm2 * 0.5);
-        
-        float d2 = dist_sqr( p1f, p2f );
-        
-        
-        
-        bool dist_cull = false;
-        
-        
-        float ff = 0;
-        {
-            
-            
-            vec3f dn = (p1f - p2f).normalize();
-            //std::cout << p1_3d << " " << p2_3d << " " << dn << "\n";
-            //.norm();
-            float ff1 = std::max( 0.0f, norm1.dot(vec3f(0.0, 0.0, 0.0)-dn));
-            float ff2 = std::max( 0.0f, norm2.dot(dn));
-            
-            ff = ff1 * ff2;
-            //                  ff = std::max( 0.0f, ff );
-            //                      std::cout << "ff: " << ff << "\n";
-            //dist_cull = ff < 0.01;
-        }
-        
-        
-        
-        //dist_cull = false;
-        
-        
-        
-        ff /=  (3.1415 * d2);
-        
-        //              os << ff << "\n";
-        
-        dist_cull = ff < 5e-5;
-        
-        if ( !dist_cull && i != j ) {
-            
-            if ( util::occluded( p1 + norm1, p2 + norm2, solid_ )) {
-                //                  os << "0 ";
-                continue;
-            }
-            
-            //                  pairs_.push_back(std::make_pair(i,j));
-            //
-            //
-            //                  ffs_.push_back(ff);// / (3.1415 * d2));
-            ff_tmp.push_back(ff);
-            target_tmp.push_back(j);
-            
-            // j < i => ff2s_[j] is already initialized.
-            ff2s_[j].push_back(ff);
-            ff2_target_[j].push_back(i);
-            
-            //                  minj = std::min( minj, j );
-            //                  maxj = std::max( maxj, j );
-            ++num_ff;
-            //                  os << "1 ";
-        } else {
-            os << "0 ";
-        }
-        
-        }
-        
-        ff2s_[i].assign(ff_tmp.begin(), ff_tmp.end());
-        ff2_target_[i].assign(target_tmp.begin(), target_tmp.end());
-        
-        
-        os << "\n";
-        
-        //std::cout << "i: " << i << " " << num_ff << " " << minj << " - " << maxj << "\n";
-    }
-    
-    
-    
-    
-    
-    
-    std::cout << "num interactions (half): " << num_ff << "\n";
-    
-    return light_static( std::move( ff2s_ ), std::move( ff2_target_ ));
-}
 
 template<typename IDX>
 std::vector<IDX> ff_size_sort_permutation( const std::vector<std::vector<float>> &ffs ) 
@@ -416,7 +284,7 @@ public:
         f_rad2_ = cl::Buffer( ctx_, CL_MEM_READ_WRITE, light_static.num_planes() * sizeof(cl_float4) );
     
         {
-            cl_float4 zero = {0.0, 0.0, 0.0, 0.0};
+            cl_float4 zero{{0.0, 0.0, 0.0, 0.0}};
             std::vector<cl_float4> stage_zero(light_static.num_planes(), zero);
             
             queue_.enqueueWriteBuffer( f_rad_, false, 0, light_static.num_planes() * sizeof(cl_float4), stage_zero.data());
@@ -570,166 +438,7 @@ class ortho {
 
 public:
 
-    ublas::matrix<int> pump( const ublas::matrix<int> &in, const size_t factor ) {
-        ublas::matrix<int> out( in.size1() * factor, in.size2() * factor );
-        
-        for( size_t row = 0; row != in.size1(); ++row ) {
-            ublas::matrix_row<ublas::matrix<int>> r( out, row * factor );
-            
-           
-            
-            for( size_t col = 0; col != in.size2(); ++col ) {
-                for( size_t i = 0; i < factor; ++i ) {
-                    r[col*factor+i] = in(row, col);
-                }
-            }
-            for( size_t i = 0; i < factor; ++i ) {
-                ublas::matrix_row<ublas::matrix<int>> r2( out, row * factor + i);
-                std::copy( r.begin(), r.end(), r2.begin() );
-            }
-            
-        }
-        
-        return out;
-    }
-    
-
-
-
-    std::vector<std::vector<int>> matrix_to_intvec2d( const ublas::matrix<int> &in ) {
-        std::vector<std::vector<int>> out;
-        out.reserve(in.size1());
-        
-        for( auto it1 = in.begin1(); it1 != in.end1(); ++it1 ) {
-            out.emplace_back( it1.begin(), it1.end() );
-            
-//             std::cout << "len2: " << out.back().size() << "\n";
-        }
-//         std::cout << "len1: " << out.size() << "\n";
-        return out;
-    }
-    
-    ublas::matrix<int> load_crystal_slice( std::istream &is, size_t width, size_t height ) {
-        ublas::matrix<int> slice( height, width );
-        
-        auto mapc = [](char c) {
-                c = std::tolower(c);
-
-                if ( c == ' ' ) {
-                    return int(0);
-                } else if ( c >= 'a' && c <= 'z' ) {
-                    return int(1 + c - 'a');
-                } else if ( c >= '0' && c <= '9' ) {
-                    return int(2 + 'z' - 'a' + c - '0');
-                } else {
-                    std::cerr << "bad: " << int(c) << "\n";
-                    throw std::runtime_error( "bad character in map");
-                }
-        };
-        
-        
-        auto it1 = slice.begin1();
-        for( size_t i = 0; i < height; ++i, ++it1 ) {
-            auto it2 = it1.begin();
-            for( size_t j = 0; j < width; ++j, ++it2 ) {
-                *it2 = mapc( is.get() );
-            }
-            
-            int nl = is.get();
-            assert( nl == '\n' );
-        }
-        
-        return slice;
-    }
-    
-    
-    std::vector<ublas::matrix<int> > load_crystal( std::istream &is ) {
-        size_t width;
-        size_t height;
-        size_t num;
-        
-        is >> width;
-        is >> height;
-        is >> num;
-        
-        while( is.get() != '\n' ) {}
-        
-        std::cout << "size: " << width << " " << height << " " << num << "\n";
-        
-        std::vector<ublas::matrix<int> > out;
-        
-        for( size_t i = 0; i < num; ++i ) {
-            
-            out.emplace_back(pump(load_crystal_slice( is, width, height ), pump_factor_));
-
-            std::cout << "map: " << i << "\n";
-            
-            for( auto it1 = out.back().begin1(); it1 != out.back().end1(); ++it1 ) {
-                std::copy( it1.begin(), it1.end(), std::ostream_iterator<int>(std::cout, " " ));
-                std::cout << "\n";
-            }
-
-            
-        }
-        
-        
-        std::cout << "size: " << out.size() << "\n";
-        
-        return out;
-        
-        //throw "exit";
-        
-//         size_t len = size_t(-1);
-//         while ( !is.eof() ) {
-//             std::string line;
-// 
-//             std::getline(is, line);
-// 
-// //          while( !is.eof() ) {
-// //              char c = is.get();
-// //              if( c == '\n' ) {
-// //                  break;
-// //              }
-// //              line.push_back(c);
-// //          }
-// 
-//             if ( line.empty()) {
-//                 break;
-//             }
-// 
-//             std::cout << "len: " << line.size() << "'" << std::string(line.begin(), line.end()) << "'\n";
-// 
-// 
-//             if ( len == size_t(-1)) {
-//                 len = line.size();
-//             } else {
-//                 assert( len == line.size() );
-//             }
-// 
-//             ret.push_back(std::vector<int>(len));
-// 
-//             std::transform( line.begin(), line.end(), ret.back().begin(), [](char c) {
-//                 c = std::tolower(c);
-// 
-//                 if ( c == ' ' ) {
-//                     return int(0);
-//                 } else if ( c >= 'a' && c <= 'z' ) {
-//                     return int(1 + c - 'a');
-//                 } else if ( c >= '0' && c <= '9' ) {
-//                     return int(2 + 'z' - 'a' + c - '0');
-//                 } else {
-//                     std::cerr << "bad: " << int(c) << "\n";
-//                     throw std::runtime_error( "bad character in map");
-//                 }
-//             });
-// 
-//         }
-
-
-
-        
-    }
-
+ 
     ortho() :
       pump_factor_(4) 
     {
@@ -743,13 +452,15 @@ public:
         //std::ifstream is( "cryistal-castle-tree-wave.txt" );
 
         assert( is.good() );
-        height_fields_ = load_crystal(is);
-        std::cout << "hf: " << height_fields_.size() << "\n";
+//         height_fields_ = crystal_bits::load_crystal(is, pump_factor_);
+//         std::cout << "hf: " << height_fields_.size() << "\n";
+//         
+//         
+//         
+//         scene_static_.init_solid(height_fields_);
+//         
         
-        
-        
-        scene_static_.init_solid(height_fields_);
-        
+        scene_static_.init_solid_from_crystal(is, pump_factor_);
         
 
         scene_static_.init_planes();
@@ -1383,7 +1094,7 @@ private:
     GLuint texName;
 
     
-    std::vector<ublas::matrix<int>> height_fields_;
+    //std::vector<crystal_bits::matrix_ptr> height_fields_;
     
 //     
 

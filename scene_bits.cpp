@@ -1,3 +1,5 @@
+#include <fstream>
+
 #include <boost/numeric/ublas/matrix.hpp>
 #include <boost/numeric/ublas/matrix_proxy.hpp>
 #include "misc_utils.h"
@@ -318,6 +320,7 @@ vec3f plane::primary(plane::dir_type dt) {
         return vec3f( 0.0, 1.0, 1.0 );
     case dir_zx_p:
     case dir_zx_n:
+    default:
         return vec3f( 1.0, 0.0, 1.0 );
     }
 }
@@ -432,8 +435,8 @@ plane::plane(plane::dir_type d, const vec3f& base_pos, const vec3i& pos, float s
 
 
 }
-void scene_static::init_solid(const std::vector< boost::numeric::ublas::matrix< int > >& slices) {
-    const auto &slice0 = slices.at(0);
+void scene_static::init_solid(const std::vector< crystal_bits::matrix_ptr >& slices) {
+    const auto &slice0 = *slices.at(0);
     size_t size_z = slice0.size1();
     size_t size_x = slice0.size2();
 
@@ -444,8 +447,10 @@ void scene_static::init_solid(const std::vector< boost::numeric::ublas::matrix< 
     solid_ = bitmap3d( size_x, size_y, size_z );
 
     bool add = true;
-for( auto &slice : slices ) {
-
+    for( auto &slice_ptr : slices ) {
+        const auto &slice = *slice_ptr;
+        
+        
         int starty = 0;
 
         // kind of hack: do not touch blocks below the 1-level in subtractive passes,
@@ -641,3 +646,142 @@ void light_static::write(std::ostream& os, uint64_t hash) {
     }
 
 }
+
+
+light_static setup_formfactors( const std::vector<plane> &planes_, const bitmap3d &solid_ ) {
+    
+    //      std::ofstream os( "ff.txt" );
+    
+    std::ofstream os;//( "matrix.pnm");
+    os << "P1\n";
+    os << planes_.size() << " " << planes_.size() << "\n";
+    
+    std::vector<std::vector<float> > ff2s_(planes_.size());
+    std::vector<std::vector<int> > ff2_target_(planes_.size());
+    
+    std::vector<float> ff_tmp;
+    std::vector<int> target_tmp;
+    size_t num_ff = 0;
+    
+    for ( size_t i = 0; i < planes_.size(); ++i ) {
+        vec3i p1 = planes_.at(i).pos();
+        
+        
+        vec3f norm1 = planes_[i].norm();
+        vec3f p1f = p1;//(p1 + norm1 * 0.5);
+        
+        //             size_t minj = size_t(-1);
+        //             size_t maxj = 0;
+        
+        
+        
+        ff_tmp.clear();
+        target_tmp.clear();
+        
+        for ( size_t j = 0; j < i /*planes_.size()*/; ++j ) {
+            
+            //                  std::cerr << "i: " << i << " " << j << "\n";
+            
+            
+            if ( light_utils::normal_cull( planes_[i], planes_[j] )) {
+                //                  os << "0 ";
+                continue;
+            }
+            
+            //              if( planes_[i].normal_cull(planes_[j])) {
+        //                  os << "0 ";
+        //                  continue;
+        //              }
+        
+        const vec3i &p2 = planes_[j].pos();
+        
+        
+        const vec3f &norm2 = planes_[j].norm();
+        vec3f p2f = p2;// + (norm2 * 0.5);
+        
+        float d2 = dist_sqr( p1f, p2f );
+        
+        
+        
+        bool dist_cull = false;
+        
+        
+        float ff = 0;
+        {
+            
+            
+            vec3f dn = (p1f - p2f).normalize();
+            //std::cout << p1_3d << " " << p2_3d << " " << dn << "\n";
+            //.norm();
+            float ff1 = std::max( 0.0f, norm1.dot(vec3f(0.0, 0.0, 0.0)-dn));
+            float ff2 = std::max( 0.0f, norm2.dot(dn));
+            
+            ff = ff1 * ff2;
+            //                  ff = std::max( 0.0f, ff );
+            //                      std::cout << "ff: " << ff << "\n";
+            //dist_cull = ff < 0.01;
+        }
+        
+        
+        
+        //dist_cull = false;
+        
+        
+        
+        ff /=  (3.1415 * d2);
+        
+        //              os << ff << "\n";
+        
+        dist_cull = ff < 5e-5;
+        
+        if ( !dist_cull && i != j ) {
+            
+            if ( util::occluded( p1 + norm1, p2 + norm2, solid_ )) {
+                //                  os << "0 ";
+                continue;
+            }
+            
+            //                  pairs_.push_back(std::make_pair(i,j));
+            //
+            //
+            //                  ffs_.push_back(ff);// / (3.1415 * d2));
+            ff_tmp.push_back(ff);
+            target_tmp.push_back(j);
+            
+            // j < i => ff2s_[j] is already initialized.
+            ff2s_[j].push_back(ff);
+            ff2_target_[j].push_back(i);
+            
+            //                  minj = std::min( minj, j );
+            //                  maxj = std::max( maxj, j );
+            ++num_ff;
+            //                  os << "1 ";
+        } else {
+            os << "0 ";
+        }
+        
+        }
+        
+        ff2s_[i].assign(ff_tmp.begin(), ff_tmp.end());
+        ff2_target_[i].assign(target_tmp.begin(), target_tmp.end());
+        
+        
+        os << "\n";
+        
+        //std::cout << "i: " << i << " " << num_ff << " " << minj << " - " << maxj << "\n";
+    }
+    
+    
+    
+    
+    
+    
+    std::cout << "num interactions (half): " << num_ff << "\n";
+    
+    return light_static( std::move( ff2s_ ), std::move( ff2_target_ ));
+}
+void scene_static::init_solid_from_crystal(std::istream& is, size_t pump) {
+
+    init_solid(crystal_bits::load_crystal(is, pump));
+}
+

@@ -17,9 +17,11 @@
 
 #include <array>
 #include <iostream>
+
 #include <boost/dynamic_bitset.hpp>
 #include <boost/numeric/ublas/fwd.hpp>
 #include "misc_utils.h"
+#include "crystal_bits.h"
 
 namespace ublas = boost::numeric::ublas;
 
@@ -237,7 +239,8 @@ private:
 
 class scene_static {
 public:
-    void init_solid( const std::vector<ublas::matrix<int>> &slices );
+    void init_solid_from_crystal( std::istream &is, size_t pump ) ;
+    void init_solid( const std::vector<crystal_bits::matrix_ptr> &slices );
         
     void init_planes() ;
     
@@ -344,5 +347,7 @@ private:
 };
 
 
+
+light_static setup_formfactors( const std::vector<plane> &planes_, const bitmap3d &solid_ );
 
 #endif
