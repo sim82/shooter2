@@ -3,7 +3,7 @@ project(shooter2)
 #add_executable(shooter2 main.cpp)
 #add_executable(rad rad.cpp)
 #add_executable(clangl clangl.cpp)
-add_executable( ortho ortho.cpp)
+add_executable( ortho ortho.cpp player_bits.cpp scene_bits.cpp rad_core.cpp)
 
 
 SET(ClanLib_DIR  ${CMAKE_CURRENT_SOURCE_DIR})
