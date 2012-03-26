@@ -1,14 +1,20 @@
 
 
-__kernel void convert_colors(__global uchar4* out, __global float *in, unsigned int size )
+__kernel void convert_colors(__global uchar4* out, __global float4 *in, unsigned int size )
 {
     
     unsigned int x = get_global_id(0);
     
-    uchar r = clamp( in[x*3] * 255, (float)0, (float)255 );
-    uchar g = clamp( in[x*3+1] * 255, (float)0, (float)255 );
-    uchar b = clamp( in[x*3+2] * 255, (float)0, (float)255 );
-    uchar4 outc = (uchar4)(r,g,b,0xff);
+//     uchar r = clamp( in[x*4] * 255, (float)0, (float)255 );
+//     uchar g = clamp( in[x*4+1] * 255, (float)0, (float)255 );
+//     uchar b = clamp( in[x*4+2] * 255, (float)0, (float)255 );
+//     uchar4 outc = (uchar4)(r,g,b,0xff);
+    
+    float4 v = clamp( in[x] * 255.0, (float4)(0,0,0,0),(float4)(255,255,255,255));
+    
+    //float4 v = (0.5, 0.5, 0.5, 0.5) * 255;
+    //uchar4 outc = (uchar4)((uchar)v[0], (uchar)v[1], (uchar)v[2], (uchar)v[3]);
+    uchar4 outc = (uchar4)(v.x, v.y, v.z, 0xff);
     
     out[x*4] = outc;
     out[x*4+1] = outc;

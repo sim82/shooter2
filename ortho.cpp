@@ -1835,7 +1835,7 @@ public:
             pints_last_time_(0)
     {
 
-        
+        return;
         
         if ( !true ) {
             threads_.push_back( std::thread( [&]() {
@@ -2076,6 +2076,206 @@ private:
 };
 
 
+class rad_core_opencl : public rad_core {
+public:
+    
+    rad_core_opencl( cl::Context ctx, cl::CommandQueue queue, const scene_static &scene_static, const light_static &light_static ) 
+    : ctx_(ctx), queue_(queue), num_planes_(scene_static.planes().size()), buf_dir_(true),
+    pints_(0), pints_last_(0), pints_last_time_(0)
+    {
+        
+        size_t num_facts = 0;
+        std::vector<cl_int> stage_offsets;
+        std::vector<cl_int> stage_num;
+        
+        std::vector<cl_float> stage_fact;
+        std::vector<cl_int> stage_target;
+
+        
+        auto & fact = light_static.f_fact();
+        auto & target = light_static.f_target();
+        
+        for( size_t i = 0; i < fact.size(); ++i ) {
+        //std::for_each(light_static.f_fact().begin(), light_static.f_fact().end(), [&]( const std::vector<float> & f) {
+            stage_offsets.push_back(num_facts);
+            stage_num.push_back(fact[i].size());
+            num_facts += fact[i].size();
+            
+            stage_fact.insert( stage_fact.end(), fact[i].begin(), fact[i].end() );
+            stage_target.insert( stage_target.end(), target[i].begin(), target[i].end() );
+        }
+        
+        assert( num_facts < size_t(std::numeric_limits<cl_int>::max()) );
+        assert( stage_fact.size() == num_facts );
+        assert( stage_target.size() == num_facts );
+        
+        //pints_iter_ = num_facts;
+        
+        pints_iter_ = *std::max_element(stage_num.begin(), stage_num.end()) * stage_num.size();
+        
+        std::vector<cl_float4> stage_col_diff;//( num_planes_ );
+        for( auto & p : scene_static.planes() ) {
+            vec3f ci = p.col_diff();
+            
+            cl_float4 co;
+            co.s[0] = ci.r;
+            co.s[1] = ci.g;
+            co.s[2] = ci.b;
+            co.s[3] = 1.0;
+            stage_col_diff.push_back( co );
+        }
+        
+        
+        f_fact_ = cl::Buffer( ctx_, CL_MEM_WRITE_ONLY, num_facts * sizeof(cl_float) );
+        f_target_ = cl::Buffer( ctx_, CL_MEM_WRITE_ONLY, num_facts * sizeof(cl_int) );
+        f_offsets_ = cl::Buffer( ctx_, CL_MEM_WRITE_ONLY, stage_offsets.size() * sizeof(cl_int) );
+        f_num_ = cl::Buffer( ctx_, CL_MEM_WRITE_ONLY, stage_num.size() * sizeof(cl_int) );
+        
+        col_diff_ = cl::Buffer( ctx_, CL_MEM_WRITE_ONLY, stage_col_diff.size() * sizeof(cl_float4) );
+        
+        queue_.enqueueWriteBuffer( f_fact_, false, 0, num_facts * sizeof(cl_float), stage_fact.data() );
+        queue_.enqueueWriteBuffer( f_target_, false, 0, num_facts * sizeof(cl_int), stage_target.data() );
+        queue_.enqueueWriteBuffer( f_offsets_, false, 0, stage_offsets.size() * sizeof(cl_int), stage_offsets.data() );
+        queue_.enqueueWriteBuffer( f_num_, false, 0, stage_num.size() * sizeof(cl_int), stage_num.data() );
+        queue_.enqueueWriteBuffer( col_diff_, false, 0, stage_col_diff.size() * sizeof(cl_float4), stage_col_diff.data() );
+        queue_.finish();
+        
+        f_emit_ = cl::Buffer( ctx_, CL_MEM_WRITE_ONLY, light_static.num_planes() * sizeof(cl_float4) );
+        f_rad_ = cl::Buffer( ctx_, CL_MEM_READ_ONLY, light_static.num_planes() * sizeof(cl_float4) );
+        f_rad2_ = cl::Buffer( ctx_, CL_MEM_READ_ONLY, light_static.num_planes() * sizeof(cl_float4) );
+    }
+    
+    void load_kernel( cl::Context ctx, const std::vector<cl::Device> &used_devices ) {
+        std::string source;
+        {
+            std::ifstream is( "rad_core.cl" );
+            
+            // I hate myself for doing it this way, but it's the easiest...
+            
+            while( is.good() ) {
+                
+                char c = is.get();
+                if( is.good() ) {
+                    source.push_back(c);
+                }
+            }
+        }
+        
+       // std::cout << "source >>>>" << source << "<<<<\n";
+        assert( !source.empty() );
+        
+        cl_int err;
+        try {
+            program_ = cl::Program( ctx, source, false, &err );
+            
+            program_.build();
+        } catch( cl::Error x ) {
+            std::cout << "cl error during build: " << x.what() << " " << cl_str_error(x.err()) << "\n"; 
+            
+            if( x.err() == CL_BUILD_PROGRAM_FAILURE ) {
+                auto log = program_.getBuildInfo<CL_PROGRAM_BUILD_LOG>( used_devices.front() );
+                
+                std::cout << "build error. log: \n" << log << "end of log.\n";
+            }
+            
+            throw;
+        }
+        assert( err == CL_SUCCESS );
+        
+        kernel_ = cl::Kernel( program_, "rad_kernel", &err );
+        assert( err == CL_SUCCESS );   
+    }
+    
+    virtual void set_emit( const std::vector<vec3f> &emit ) {
+        stage_.resize(emit.size());
+        
+        std::transform( emit.begin(), emit.end(), stage_.begin(), []( vec3f in ) {
+            cl_float4 t;
+            t.s[0] = in.r;
+            t.s[1] = in.g;
+            t.s[2] = in.b;
+            return t;
+        });
+        queue_.enqueueWriteBuffer( f_emit_, true, 0, stage_.size() * sizeof(cl_float4), stage_.data());
+    }
+//     virtual bool update() = 0;
+    virtual void copy( std::vector<vec3f> *out ) {
+        
+    }
+    void run() {
+        buf_dir_ = !buf_dir_;
+        kernel_.setArg(0, cl_int(num_planes_));
+        kernel_.setArg(1, f_fact_);
+        kernel_.setArg(2, f_target_);
+        kernel_.setArg(3, f_offsets_);
+        kernel_.setArg(4, f_num_);
+        kernel_.setArg(5, col_diff_);
+        kernel_.setArg(6, f_emit_);
+        
+        if( !buf_dir_ ) {
+            kernel_.setArg(7, f_rad_);
+            kernel_.setArg(8, f_rad2_);
+        } else {
+            kernel_.setArg(8, f_rad_);
+            kernel_.setArg(7, f_rad2_);
+        }
+        
+        queue_.enqueueNDRangeKernel( kernel_, cl::NDRange(0), cl::NDRange(num_planes_) );
+        queue_.finish();
+        
+        pints_ += pints_iter_;
+        
+    }
+    
+    cl::Buffer f_rad() {
+        cl_ubyte64 time = CL_System::get_microseconds();
+        
+        cl_ubyte64 dt = time - pints_last_time_;
+//        std::cout << dt << "\n";
+        if( dt >= 1e6 ) {
+            const size_t dp = pints_ - pints_last_;
+            pints_last_ = pints_;
+            
+            pints_last_time_ = time;
+            
+            std::cout << "gpu pint/s: " << dp / (dt / 1.0e6) << "\n";
+        }
+        
+        
+        if( buf_dir_ ) {
+            return f_rad_;
+        } else {
+            return f_rad2_;
+        }
+    }
+private:
+    cl::Context ctx_;
+    cl::CommandQueue queue_;
+    
+    cl::Program program_;
+    cl::Kernel kernel_;
+    
+    cl::Buffer f_fact_;
+    cl::Buffer f_target_;
+    cl::Buffer f_offsets_;
+    cl::Buffer f_num_;
+    
+    cl::Buffer col_diff_;
+    
+    cl::Buffer f_emit_;
+    cl::Buffer f_rad_;
+    cl::Buffer f_rad2_;
+    
+    const size_t num_planes_;
+    std::vector<cl_float4> stage_;
+    
+    bool buf_dir_;
+    uint64_t pints_;
+    uint64_t pints_iter_;
+    uint64_t pints_last_;
+    uint64_t pints_last_time_;
+};
+
 
 class input_mapper {
 public:
@@ -2236,7 +2436,7 @@ class vbo_builder {
     
 public:
     vbo_builder( size_t num_planes ) : num_planes_(num_planes) {
-        GLuint b;
+        //GLuint b;
         glGenBuffers( 2, buffers_ );
         glGenBuffers( 1, &index_buffer_ );
         
@@ -2339,83 +2539,83 @@ public:
     const size_t num_planes_;
 };
 
-class vertex_array_builder {
-public:
-    vertex_array_builder() {
-        
-    }
-
-    template<typename iiter>
-    void render( iiter first, iiter last ) {
-        num_planes_ = std::distance( first, last );
-        
-        for( ; first != last; ++first ) {
-         
-            const plane &p = *first;
-            size_t s1 = vertex_.size();
-            
-            p.render_color( std::back_inserter(color_));
-            p.render_vertex( std::back_inserter(vertex_));
-            
-            size_t s2 =vertex_.size();
-            
-            for( ;s1 != s2; ++s1 ){
-                index_.push_back(s1);
-            }
-        }
-        
-        std::cout << "vab: " << vertex_.size() << " " << index_.size() << "\n";
-    }
-    
-    template<typename iiter>
-    void update_color( iiter first, iiter last ) {
-        auto cfirst = color_.begin();
-        
-        assert( std::distance( first, last ) == num_planes_ );
-        
-        for( ;first != last; ++first ) {
-
-            for( size_t i = 0; i < 4; ++i ) {
-                *(cfirst++) = first->r;
-                *(cfirst++) = first->g;
-                *(cfirst++) = first->b;
-            }
-            
+// class vertex_array_builder {
+// public:
+//     vertex_array_builder() {
+//         
+//     }
+// 
+//     template<typename iiter>
+//     void render( iiter first, iiter last ) {
+//         num_planes_ = std::distance( first, last );
+//         
+//         for( ; first != last; ++first ) {
+//          
 //             const plane &p = *first;
-//  
-//             cfirst = p.render_color( cfirst );
-
-        
-        
-            assert( cfirst <= color_.end() );
-        }
-        
-        
-        
-    }
-    
-    void setup_gl_pointers() {
-        glVertexPointer(3, GL_FLOAT, 0, vertex_.data());
-        glColorPointer(3, GL_FLOAT, 0, color_.data() );
-        glIndexPointer(GL_INT, 0, index_.data());
-        
-        glEnableClientState( GL_VERTEX_ARRAY );
-        glEnableClientState( GL_COLOR_ARRAY );
-        glEnableClientState( GL_INDEX_ARRAY );
-    }
-    
-    
-    void draw_arrays() {
-        glDrawArrays(GL_QUADS, 0, num_planes_ * 4);
-    }
-    
-private:
-    std::vector<float> vertex_;
-    std::vector<float> color_;
-    std::vector<int> index_;
-    
-    size_t num_planes_;
-};
+//             size_t s1 = vertex_.size();
+//             
+//             p.render_color( std::back_inserter(color_));
+//             p.render_vertex( std::back_inserter(vertex_));
+//             
+//             size_t s2 =vertex_.size();
+//             
+//             for( ;s1 != s2; ++s1 ){
+//                 index_.push_back(s1);
+//             }
+//         }
+//         
+//         std::cout << "vab: " << vertex_.size() << " " << index_.size() << "\n";
+//     }
+//     
+//     template<typename iiter>
+//     void update_color( iiter first, iiter last ) {
+//         auto cfirst = color_.begin();
+//         
+//         assert( std::distance( first, last ) == num_planes_ );
+//         
+//         for( ;first != last; ++first ) {
+// 
+//             for( size_t i = 0; i < 4; ++i ) {
+//                 *(cfirst++) = first->r;
+//                 *(cfirst++) = first->g;
+//                 *(cfirst++) = first->b;
+//             }
+//             
+// //             const plane &p = *first;
+// //  
+// //             cfirst = p.render_color( cfirst );
+// 
+//         
+//         
+//             assert( cfirst <= color_.end() );
+//         }
+//         
+//         
+//         
+//     }
+//     
+//     void setup_gl_pointers() {
+//         glVertexPointer(3, GL_FLOAT, 0, vertex_.data());
+//         glColorPointer(3, GL_FLOAT, 0, color_.data() );
+//         glIndexPointer(GL_INT, 0, index_.data());
+//         
+//         glEnableClientState( GL_VERTEX_ARRAY );
+//         glEnableClientState( GL_COLOR_ARRAY );
+//         glEnableClientState( GL_INDEX_ARRAY );
+//     }
+//     
+//     
+//     void draw_arrays() {
+//         glDrawArrays(GL_QUADS, 0, num_planes_ * 4);
+//     }
+//     
+// private:
+//     std::vector<float> vertex_;
+//     std::vector<float> color_;
+//     std::vector<int> index_;
+//     
+//     size_t num_planes_;
+// };
 
 class ortho {
 
@@ -2809,7 +3009,7 @@ public:
 
         vec3i light_pos( 0, 40, 0 );
 
-        int steps = 1;
+        //int steps = 1;
 
         //light_scene ls( planes_, solid_ );
 
@@ -2820,26 +3020,39 @@ public:
         double delta_t = 0.01;
         player p1;
 
+        rad_core_ = make_unique<rad_core_threaded>( scene_static_, light_static_ );
+        
+        
+        auto rad_core2 = make_unique<rad_core_opencl>( cl_context_, cl_cqueue_, scene_static_, light_static_ );
+        rad_core2->load_kernel( cl_context_, cl_used_devices_ );
+        
+        
 //      float min_ff = 5e-5;
 
-        vertex_array_builder vab;
+        
 //         vab.render(planes_.begin(), planes_.end() );
         
         vbo_builder vbob(scene_static_.planes().size());
         vbob.update_index_buffer(scene_static_.planes().size());
         vbob.update_vertices( scene_static_.planes().begin(), scene_static_.planes().end());
         
-        cl::Buffer buf;
+        
+        cl::BufferGL buf;
+        //cl::Buffer buf;
         try {
-            cl_int cl_err;
-            buf = cl::Buffer( clCreateFromGLBuffer( cl_context_(), CL_MEM_WRITE_ONLY, vbob.buffers_[1], &cl_err ));
-            assert( cl_err == CL_SUCCESS );
+            
+            //cl_int cl_err;
+            //buf = cl::Buffer( clCreateFromGLBuffer( cl_context_(), CL_MEM_WRITE_ONLY, vbob.buffers_[1], &cl_err ));
+            //assert( cl_err == CL_SUCCESS );
+            buf = cl::BufferGL( cl_context_, CL_MEM_WRITE_ONLY, vbob.buffers_[1] );
+        
         
         
             cl_fcolor_ = cl::Buffer( cl_context_, CL_MEM_READ_ONLY, scene_static_.planes().size() * 3 * sizeof(float) );
             
             cl_kernel_.setArg(0, buf() );
-            cl_kernel_.setArg(1, cl_fcolor_ );
+            //cl_kernel_.setArg(1, cl_fcolor_ );
+            cl_kernel_.setArg(1, rad_core2->f_rad() );
             cl_uint cl_color_size = scene_static_.planes().size();
             cl_kernel_.setArg(2, cl_color_size );
             
@@ -2851,7 +3064,6 @@ public:
         }
         bool light_changed = true;
         
-        rad_core_ = make_unique<rad_core_threaded>( scene_static_, light_static_ );
         
         
         while ( true ) {
@@ -2939,12 +3151,14 @@ public:
                 light_changed = false;
             }
             
+            rad_core2->set_emit( *light_dynamic_.emit() );
             rad_core_->set_emit( *light_dynamic_.emit() );
             //ls.render_emit_patches();
 
             //steps = 1;
             //ls.do_radiosity( steps );
 
+            rad_core2->run();
             rad_core_->copy( light_dynamic_.rad() );
              // stupid: transfer rgb energy fomr light scene to planes
             for ( size_t i = 0; i < scene_static_.planes().size(); ++i ) {
@@ -2976,8 +3190,8 @@ public:
                 assert( err == CL_SUCCESS );
 
 
-                // Set arg 3 and execute the kernel
                 
+                cl_kernel_.setArg(1, rad_core2->f_rad() );
                 cl_cqueue_.enqueueNDRangeKernel( cl_kernel_, 0, cl::NDRange(scene_static_.planes().size()) );
                 
                                
