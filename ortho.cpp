@@ -31,7 +31,7 @@
 #include <functional>
 #include <memory>
 #include <stdexcept>
-
+#include <sstream>
 
 // #include <boost/numeric/ublas/matrix.hpp>
 // #include <boost/numeric/ublas/matrix_proxy.hpp>
@@ -204,7 +204,24 @@ private:
     
 };
 
-
+std::string hash_to_filename( uint64_t hash ) {
+    std::stringstream ss;
+    ss << "baked";
+    for( size_t i = 0; i < 8; ++i ) {
+        size_t c = hash & 0xff;
+        
+        
+        ss << std::hex << c;
+        
+        
+        
+        hash >>= 1;
+        
+        
+    }
+    ss << ".bin";
+    return ss.str();
+}
 
 class scene_unit {
 public:
@@ -232,9 +249,11 @@ public:
         scene_static_.init_planes();
 
         uint64_t scene_hash = scene_static_.hash();
+        auto bin_name = hash_to_filename(scene_hash);
         
+        std::cout << "baked name: " << bin_name << "\n";
         try {
-            std::ifstream is( "ff.bin" );
+            std::ifstream is( bin_name.c_str() );
             
             
             light_static_ = light_static( is, scene_hash );
@@ -246,7 +265,7 @@ public:
         }
         
         if( !false ) {
-            std::ofstream os( "ff.bin" );
+            std::ofstream os( bin_name.c_str() );
             light_static_.write(os, scene_hash);
         }
         
@@ -564,10 +583,10 @@ public:
 //         glColorPointer(
 
         //std::ifstream is( "cryistal-castle-hidden-ramp.txt" );
-        std::ifstream is( "house1.txt" );
+//         std::ifstream is( "house1.txt" );
         //std::ifstream is( "cryistal-castle-tree-wave.txt" );
 
-        assert( is.good() );
+//         assert( is.good() );
 //         height_fields_ = crystal_bits::load_crystal(is, pump_factor_);
 //         std::cout << "hf: " << height_fields_.size() << "\n";
 //         
@@ -576,32 +595,32 @@ public:
 //         scene_static_.init_solid(height_fields_);
 //         
         
-        scene_static_.init_solid_from_crystal(is, pump_factor_);
+//         scene_static_.init_solid_from_crystal(is, pump_factor_);
         
 
-        scene_static_.init_planes();
+//         scene_static_.init_planes();
 
-        uint64_t scene_hash = scene_static_.hash();
-        
-        try {
-            std::ifstream is( "ff.bin" );
-            
-            
-            light_static_ = light_static( is, scene_hash );
-        } catch( std::runtime_error x ) {
-            
-            std::cerr << "load failed. recreating. error:\n" << x.what() << std::endl;
-            
-            light_static_ = setup_formfactors(scene_static_.planes(), scene_static_.solid());    
-        }
-        
-        if( !false ) {
-            std::ofstream os( "ff.bin" );
-            light_static_.write(os, scene_hash);
-        }
-        
-        
-        light_dynamic_ = light_dynamic(scene_static_.planes().size() );
+//         uint64_t scene_hash = scene_static_.hash();
+//         
+//         try {
+//             std::ifstream is( "ff.bin" );
+//             
+//             
+//             light_static_ = light_static( is, scene_hash );
+//         } catch( std::runtime_error x ) {
+//             
+//             std::cerr << "load failed. recreating. error:\n" << x.what() << std::endl;
+//             
+//             light_static_ = setup_formfactors(scene_static_.planes(), scene_static_.solid());    
+//         }
+//         
+//         if( !false ) {
+//             std::ofstream os( "ff.bin" );
+//             light_static_.write(os, scene_hash);
+//         }
+//         
+//         
+//         light_dynamic_ = light_dynamic(scene_static_.planes().size() );
         
         CL_OpenGLWindowDescription desc;
         desc.set_size( CL_Size( 1024, 768 ), true );
@@ -801,8 +820,8 @@ public:
 //         rad_core_ = make_rad_core_threaded(scene_static_, light_static_);
         
         
-        auto rad_core2 = make_unique<rad_core_opencl>( cl_context_, cl_cqueue_, scene_static_, light_static_ );
-        rad_core2->load_kernel( cl_context_, cl_used_devices_ );
+//         auto rad_core2 = make_unique<rad_core_opencl>( cl_context_, cl_cqueue_, scene_static_, light_static_ );
+//         rad_core2->load_kernel( cl_context_, cl_used_devices_ );
         
         
 //      float min_ff = 5e-5;
@@ -810,16 +829,18 @@ public:
         
 //         vab.render(planes_.begin(), planes_.end() );
         
-        vbo_builder vbob(scene_static_.planes().size());
-        vbob.update_index_buffer(scene_static_.planes().size());
-        vbob.update_vertices( scene_static_.planes().begin(), scene_static_.planes().end());
+//         vbo_builder vbob(scene_static_.planes().size());
+//         vbob.update_index_buffer(scene_static_.planes().size());
+//         vbob.update_vertices( scene_static_.planes().begin(), scene_static_.planes().end());
         
         std::ifstream is( "cryistal-castle-hidden-ramp.txt" );
-        render_unit runit(is, vec3f( -20.0, -10.0, -20.0 ));
+        render_unit runit(is, vec3f( -40.0, -20.0, -40.0 ));
         
-        std::ifstream is2( "house1.txt" );
-        render_unit runit2(is2, vec3f( 0.0, -10.0, 0.0 ));
+        std::ifstream is2( "cryistal-castle-tree-wave.txt" );
+//         std::ifstream is2( "house1.txt" );
+        render_unit runit2(is2, vec3f( 60.0, -20.0, 0.0 ));
         
+#if 0
         cl::BufferGL buf;
         //cl::Buffer buf;
         try {
@@ -845,6 +866,7 @@ public:
             std::cerr << "cl error during gl buffer setup\ncall: " << x.what() << "\nerror code: " << cl_str_error( x.err() ) << "\n";            
             throw;
         }
+#endif
         bool light_changed = true;
         
         //rad_core_ = make_unique<rad_core_lockfree>( scene_static_, light_static_ );
@@ -872,20 +894,22 @@ public:
             p1.input(keyboard, mouse);
             p1.frame(t_old * 1.0e-3, delta_t);
 
+            int light_speed = 10;
+            
             if ( keyboard.get_keycode(CL_KEY_LEFT) ) {
-                light_pos.x += 1;
+                light_pos.x += light_speed;
                 light_changed = true;
             }
             if (  keyboard.get_keycode(CL_KEY_RIGHT) ) {
-                light_pos.x -= 1;
+                light_pos.x -= light_speed;
                 light_changed = true;
             }
             if ( keyboard.get_keycode(CL_KEY_UP) ) {
-                light_pos.z += 1;
+                light_pos.z += light_speed;
                 light_changed = true;
             }
             if (  keyboard.get_keycode(CL_KEY_DOWN) ) {
-                light_pos.z -= 1;
+                light_pos.z -= light_speed;
                 light_changed = true;
             }
             if ( keyboard.get_keycode(CL_KEY_L )) {
@@ -918,7 +942,7 @@ public:
             
             if( light_changed ) {
                 //ls.reset_emit();
-                light_dynamic_.clear_emit();
+//                 light_dynamic_.clear_emit();
                 runit.clear_emit();
                 runit2.clear_emit();
                 //ls.render_light(vec3f( 40, 50.0, light_x ), vec3f(1.0, 1.0, 1.0 ));
@@ -948,11 +972,11 @@ public:
             //rad_core2->run();
 //             rad_core_->copy( light_dynamic_.rad() );
              // stupid: transfer rgb energy fomr light scene to planes
-            for ( size_t i = 0; i < scene_static_.planes().size(); ++i ) {
-                plane &p = const_cast<plane &>(scene_static_.planes()[i]); // FIXME: HACK!!! is the energy_rgp stored in the planes actually used? remove it!
-                p.energy_rgb((*light_dynamic_.rad())[i]);
-            }
-            
+//             for ( size_t i = 0; i < scene_static_.planes().size(); ++i ) {
+//                 plane &p = const_cast<plane &>(scene_static_.planes()[i]); // FIXME: HACK!!! is the energy_rgp stored in the planes actually used? remove it!
+//                 p.energy_rgb((*light_dynamic_.rad())[i]);
+//             }
+//             
             light_x += light_xd;
 
 
@@ -1237,12 +1261,12 @@ private:
     cl::CommandQueue cl_cqueue_;
     cl::Buffer cl_fcolor_;
     
-    scene_static scene_static_;
-    
-    light_static light_static_;
-    light_dynamic light_dynamic_;
-    
-    std::unique_ptr<rad_core> rad_core_;
+//     scene_static scene_static_;
+//     
+//     light_static light_static_;
+//     light_dynamic light_dynamic_;
+//     
+//     std::unique_ptr<rad_core> rad_core_;
 };
 
 
