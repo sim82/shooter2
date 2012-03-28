@@ -239,6 +239,9 @@ private:
 
 class scene_static {
 public:
+    scene_static( const vec3f &base_pos ) : base_pos_(base_pos) {}
+    scene_static() {}
+    
     void init_solid_from_crystal( std::istream &is, size_t pump ) ;
     void init_solid( const std::vector<crystal_bits::matrix_ptr> &slices );
         

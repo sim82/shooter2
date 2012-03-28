@@ -480,8 +480,8 @@ void scene_static::init_solid(const std::vector< crystal_bits::matrix_ptr >& sli
 }
 void scene_static::init_planes() {
 
-    vec3f base_pos( -(solid_.x() / 2.0 + 0.5), -10.5, -(solid_.z() / 2.0 + 0.5));
-    base_pos_ = base_pos;
+   // vec3f base_pos( -(solid_.x() / 2.0 + 0.5), -10.5, -(solid_.z() / 2.0 + 0.5));
+    //base_pos_ = base_pos;
 
 //         std::cout << "base pos: " << base_pos_ << " " << solid_.x() << "\n";
 
@@ -504,22 +504,22 @@ void scene_static::init_planes() {
 
 
                     if ( !solidc(x,y,z+1)) {
-                        planes_.push_back( plane( plane::dir_xy_p, base_pos, vec3i( x, y, z ), scale, energy));
+                        planes_.push_back( plane( plane::dir_xy_p, base_pos_, vec3i( x, y, z ), scale, energy));
                     }
                     if ( !solidc(x,y,z-1)) {
-                        planes_.push_back( plane( plane::dir_xy_n, base_pos, vec3i( x, y, z ), scale, energy));
+                        planes_.push_back( plane( plane::dir_xy_n, base_pos_, vec3i( x, y, z ), scale, energy));
                     }
                     if ( !solidc(x+1,y,z)) {
-                        planes_.push_back( plane( plane::dir_yz_p, base_pos, vec3i( x, y, z ), scale, energy));
+                        planes_.push_back( plane( plane::dir_yz_p, base_pos_, vec3i( x, y, z ), scale, energy));
                     }
                     if ( !solidc(x-1,y,z)) {
-                        planes_.push_back( plane( plane::dir_yz_n, base_pos, vec3i( x, y, z ), scale, energy));
+                        planes_.push_back( plane( plane::dir_yz_n, base_pos_, vec3i( x, y, z ), scale, energy));
                     }
                     if ( !solidc(x,y+1,z)) {
-                        planes_.push_back( plane( plane::dir_zx_p, base_pos, vec3i( x, y, z ), scale, energy));
+                        planes_.push_back( plane( plane::dir_zx_p, base_pos_, vec3i( x, y, z ), scale, energy));
                     }
                     if ( y > 0 && !solidc(x,y-1,z)) {
-                        planes_.push_back( plane( plane::dir_zx_n, base_pos, vec3i( x, y, z ), scale, energy));
+                        planes_.push_back( plane( plane::dir_zx_n, base_pos_, vec3i( x, y, z ), scale, energy));
                     }
 
 

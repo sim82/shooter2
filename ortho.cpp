@@ -160,9 +160,6 @@ namespace ublas = boost::numeric::ublas;
 
 
 
-
-
-
 template<typename IDX>
 std::vector<IDX> ff_size_sort_permutation( const std::vector<std::vector<float>> &ffs ) 
 {
@@ -208,6 +205,125 @@ private:
 };
 
 
+
+class scene_unit {
+public:
+    scene_unit( std::istream &is, const vec3i &base_pos )
+      : 
+      base_pos_(base_pos),
+      scene_static_( base_pos )
+    {
+        //std::ifstream is( "cryistal-castle-hidden-ramp.txt" );
+     //    std::ifstream is( "house1.txt" );
+        //std::ifstream is( "cryistal-castle-tree-wave.txt" );
+
+        assert( is.good() );
+//         height_fields_ = crystal_bits::load_crystal(is, pump_factor_);
+//         std::cout << "hf: " << height_fields_.size() << "\n";
+//         
+//         
+//         
+//         scene_static_.init_solid(height_fields_);
+//         
+        const size_t pump_factor = 4;
+        scene_static_.init_solid_from_crystal(is, pump_factor);
+        
+
+        scene_static_.init_planes();
+
+        uint64_t scene_hash = scene_static_.hash();
+        
+        try {
+            std::ifstream is( "ff.bin" );
+            
+            
+            light_static_ = light_static( is, scene_hash );
+        } catch( std::runtime_error x ) {
+            
+            std::cerr << "load failed. recreating. error:\n" << x.what() << std::endl;
+            
+            light_static_ = setup_formfactors(scene_static_.planes(), scene_static_.solid());    
+        }
+        
+        if( !false ) {
+            std::ofstream os( "ff.bin" );
+            light_static_.write(os, scene_hash);
+        }
+        
+        
+        light_dynamic_ = light_dynamic(scene_static_.planes().size() );
+        rad_core_ = make_rad_core_threaded(scene_static_, light_static_);
+    }
+    
+    light_dynamic *get_light_dynamic() {
+        return &light_dynamic_;
+    }
+    
+    void rad_update() {
+        rad_core_->set_emit( *light_dynamic_.emit() );
+        rad_core_->copy( light_dynamic_.rad() );
+    }
+    
+    size_t num_planes() {
+        return scene_static_.planes().size();
+    }
+    
+    const scene_static &get_scene_static() const {
+        return scene_static_;
+    }
+private:
+    
+    vec3i base_pos_;
+    
+    scene_static scene_static_;
+    
+    light_static light_static_;
+    light_dynamic light_dynamic_;
+    
+    std::unique_ptr<rad_core> rad_core_;
+    
+    
+};
+
+
+class render_unit {
+public:
+    render_unit( std::istream &is, const vec3i &base_pos )
+    : 
+    base_pos_(base_pos),
+    scene_(is, base_pos),
+    vbob_( scene_.num_planes() )
+    {
+        base_pos_.x *= 4;
+        base_pos_.z *= 4;
+        vbob_.update_index_buffer(scene_.get_scene_static().planes().size());
+        vbob_.update_vertices( scene_.get_scene_static().planes().begin(), scene_.get_scene_static().planes().end());
+        
+    }
+    
+    void clear_emit() {
+        scene_.get_light_dynamic()->clear_emit();
+    }
+    void render_light( const vec3f &pos, const vec3f &color ) {
+        light_utils::render_light(scene_.get_light_dynamic()->emit(), scene_.get_scene_static(), pos - base_pos_, color);
+    }
+    
+    void update() {
+        
+        scene_.rad_update();
+        
+        light_dynamic *ld = scene_.get_light_dynamic();
+        vbob_.update_color(ld->rad()->begin(), ld->rad()->end());
+    }
+    void draw() {
+        vbob_.draw_arrays();
+    }
+private:
+    vec3i base_pos_;
+    scene_unit scene_;
+    vbo_builder vbob_;
+    
+};
 
 
 
@@ -447,8 +563,8 @@ public:
         //glEnableClientState( GL_VERTEX_ARRAY );
 //         glColorPointer(
 
-        std::ifstream is( "cryistal-castle-hidden-ramp.txt" );
-     //    std::ifstream is( "house1.txt" );
+        //std::ifstream is( "cryistal-castle-hidden-ramp.txt" );
+        std::ifstream is( "house1.txt" );
         //std::ifstream is( "cryistal-castle-tree-wave.txt" );
 
         assert( is.good() );
@@ -582,7 +698,7 @@ public:
         glMatrixMode(GL_PROJECTION);                        //hello
 
         {
-            CL_Mat4f proj = CL_Mat4f::perspective( 60, 1.5, 0.2, 50 );
+            CL_Mat4f proj = CL_Mat4f::perspective( 60, 1.5, 0.2, 500 );
             //      CL_Mat4f proj = CL_Mat4f::ortho( -20.0 * pump_factor_, 20.0 * pump_factor_, -15.0 * pump_factor_, 15.0 * pump_factor_, 0, 200 );
             //CL_Mat4f proj = CL_Mat4f::ortho( -40, 40, -30, 30, 0, 200 );
 
@@ -682,7 +798,7 @@ public:
 
         //rad_core_ = make_unique<rad_core_threaded>( scene_static_, light_static_ );
         
-        rad_core_ = make_rad_core_threaded(scene_static_, light_static_);
+//         rad_core_ = make_rad_core_threaded(scene_static_, light_static_);
         
         
         auto rad_core2 = make_unique<rad_core_opencl>( cl_context_, cl_cqueue_, scene_static_, light_static_ );
@@ -698,6 +814,11 @@ public:
         vbob.update_index_buffer(scene_static_.planes().size());
         vbob.update_vertices( scene_static_.planes().begin(), scene_static_.planes().end());
         
+        std::ifstream is( "cryistal-castle-hidden-ramp.txt" );
+        render_unit runit(is, vec3f( -20.0, -10.0, -20.0 ));
+        
+        std::ifstream is2( "house1.txt" );
+        render_unit runit2(is2, vec3f( 0.0, -10.0, 0.0 ));
         
         cl::BufferGL buf;
         //cl::Buffer buf;
@@ -798,7 +919,8 @@ public:
             if( light_changed ) {
                 //ls.reset_emit();
                 light_dynamic_.clear_emit();
-                
+                runit.clear_emit();
+                runit2.clear_emit();
                 //ls.render_light(vec3f( 40, 50.0, light_x ), vec3f(1.0, 1.0, 1.0 ));
                 if ( light_on ) {
                     //ls.render_light(light_pos, vec3f(1.0, 0.8, 0.6 ));
@@ -807,21 +929,24 @@ public:
                     
                     //              vec3f light_pos = (p1.pos()* pump_factor_) - base_pos_;
                     vec3f light_weird = (light_pos * pump_factor_) - base_pos_;
-                    light_utils::render_light( light_dynamic_.emit(), scene_static_, light_weird, vec3f(1.0, 0.8, 0.6 ));
+//                     light_utils::render_light( light_dynamic_.emit(), scene_static_, light_weird, vec3f(1.0, 0.8, 0.6 ));
+                    runit.render_light(light_weird, vec3f(1.0, 0.8, 0.6 ));
+                    runit2.render_light(light_weird, vec3f(1.0, 0.8, 0.6 ));
                 }
                 //ls.post();
                 light_changed = false;
             }
-            
+            runit.update();
+            runit2.update();
 //             rad_core2->set_emit( *light_dynamic_.emit() );
-            rad_core_->set_emit( *light_dynamic_.emit() );
+//             rad_core_->set_emit( *light_dynamic_.emit() );
             //ls.render_emit_patches();
 
             //steps = 1;
             //ls.do_radiosity( steps );
 
             //rad_core2->run();
-            rad_core_->copy( light_dynamic_.rad() );
+//             rad_core_->copy( light_dynamic_.rad() );
              // stupid: transfer rgb energy fomr light scene to planes
             for ( size_t i = 0; i < scene_static_.planes().size(); ++i ) {
                 plane &p = const_cast<plane &>(scene_static_.planes()[i]); // FIXME: HACK!!! is the energy_rgp stored in the planes actually used? remove it!
@@ -839,7 +964,7 @@ public:
 //             vab.update_color( ls.rad_rgb().begin(), ls.rad_rgb().end() );
             
 //             vab.setup_gl_pointers();
-            vbob.update_color(light_dynamic_.rad()->begin(), light_dynamic_.rad()->end());
+//             vbob.update_color(light_dynamic_.rad()->begin(), light_dynamic_.rad()->end());
 #if 0
             try
             {
@@ -890,8 +1015,9 @@ public:
 //             render_quads();
 //            vab.setup_gl_pointers();
 //             vab.draw_arrays();
-            vbob.draw_arrays();
-
+//             vbob.draw_arrays();
+            runit.draw();
+            runit2.draw();
             wnd_.flip(1);
 
 

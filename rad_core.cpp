@@ -79,7 +79,7 @@ public:
         } else {
 #if 1
             const size_t num_planes = scene_static_.planes().size();
-            const size_t num_threads = 3;
+            const size_t num_threads = 1;
             
             auto part = calc_plane_distribution(num_threads);
             for ( size_t i = 0; i < num_threads; ++i ) {
@@ -666,6 +666,6 @@ private:
 
 std::unique_ptr<rad_core> make_rad_core_threaded(const scene_static &scene_static, const light_static &light_static) {
     return make_unique<rad_core_threaded>( scene_static, light_static );
-    
+    //return make_unique<rad_core_lockfree>( scene_static, light_static );
 }
 
