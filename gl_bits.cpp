@@ -33,7 +33,7 @@ vbo_builder_tristrip::vbo_builder_tristrip( const scene_static &scene )
     glBindBuffer( GL_ARRAY_BUFFER, buffers_[1] ); check_gl_error;
     glBufferData( GL_ARRAY_BUFFER, color_size, 0, GL_DYNAMIC_DRAW ); check_gl_error; check_gl_error;
     
-    glPrimitiveRestartIndex( scene_static::restart_idx ); check_gl_error;
+//     glPrimitiveRestartIndex( scene_static::restart_idx ); check_gl_error;
     assert(scene.strip_idx().size() * sizeof(GLuint) == index_size );
     glBindBuffer( GL_ELEMENT_ARRAY_BUFFER, index_buffer_ ); check_gl_error;
     glBufferData( GL_ELEMENT_ARRAY_BUFFER, index_size, scene.strip_idx().data(), GL_STATIC_DRAW ); check_gl_error; 
