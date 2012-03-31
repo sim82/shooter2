@@ -20,8 +20,13 @@
 #include <GL/glx.h>
 #include <CL/cl_gl.h>
 
+
+
+#ifdef TEST_OPENCL
 #define __CL_ENABLE_EXCEPTIONS
 #include "cl.hpp"
+#endif
+
 #include "cycle.h"
 #include "cl_error_codes.h"
 #include <execinfo.h>
@@ -223,17 +228,51 @@ std::string hash_to_filename( uint64_t hash ) {
     return ss.str();
 }
 
-class scene_unit {
-public:
-    scene_unit( std::istream &is, const vec3i &base_pos )
-      : 
-      base_pos_(base_pos),
-      scene_static_( base_pos )
-    {
-        //std::ifstream is( "cryistal-castle-hidden-ramp.txt" );
-     //    std::ifstream is( "house1.txt" );
-        //std::ifstream is( "cryistal-castle-tree-wave.txt" );
+// class scene_unit {
+// public:
+//     scene_unit( std::istream &is, const vec3i &base_pos )
+//       : 
+//       base_pos_(base_pos),
+//       scene_static_( base_pos )
+//     {
+//         //std::ifstream is( "cryistal-castle-hidden-ramp.txt" );
+//      //    std::ifstream is( "house1.txt" );
+//         //std::ifstream is( "cryistal-castle-tree-wave.txt" );
+// 
+//         
+//     }
+//     
+//     light_dynamic *get_light_dynamic() {
+//         return &light_dynamic_;
+//     }
+//     
+//     void rad_update() {
+//         
+//     }
+//     
+//     size_t num_planes() {
+//         return scene_static_.planes().size();
+//     }
+//     
+//     const scene_static &get_scene_static() const {
+//         return scene_static_;
+//     }
+// private:
+//     
+//     vec3i base_pos_;
+//     
+//     
+//     
+//     
+// };
 
+
+class render_unit {
+public:
+    render_unit( std::istream &is, const vec3i &base_pos )
+    : base_pos_(base_pos),
+    scene_static_(base_pos)
+    {
         assert( is.good() );
 //         height_fields_ = crystal_bits::load_crystal(is, pump_factor_);
 //         std::cout << "hf: " << height_fields_.size() << "\n";
@@ -242,12 +281,16 @@ public:
 //         
 //         scene_static_.init_solid(height_fields_);
 //         
+        
         const size_t pump_factor = 4;
+        
+         base_pos_.x *= pump_factor;
+         base_pos_.z *= pump_factor;
         scene_static_.init_solid_from_crystal(is, pump_factor);
         
 
-        scene_static_.init_planes();
-
+//        scene_static_.init_planes();
+        scene_static_.init_strips();
         uint64_t scene_hash = scene_static_.hash();
         auto bin_name = hash_to_filename(scene_hash);
         
@@ -272,26 +315,39 @@ public:
         
         light_dynamic_ = light_dynamic(scene_static_.planes().size() );
         rad_core_ = make_rad_core_threaded(scene_static_, light_static_);
+        
+        
+        
+//         vbob_ = vbo_builder(scene_static_.planes().size() );
+//         vbob_.update_index_buffer( scene_static_.planes().size());
+//         vbob_.update_vertices( scene_static_.planes().begin(), scene_static_.planes().end());
+//         
+        vbob_ts_ = vbo_builder_tristrip( scene_static_ );
+        
     }
     
-    light_dynamic *get_light_dynamic() {
-        return &light_dynamic_;
+    void clear_emit() {
+        light_dynamic_.clear_emit();
+    }
+    void render_light( const vec3f &pos, const vec3f &color ) {
+        light_utils::render_light(light_dynamic_.emit(), scene_static_, pos - base_pos_, color);
     }
     
-    void rad_update() {
+    void update() {
+        
         rad_core_->set_emit( *light_dynamic_.emit() );
         rad_core_->copy( light_dynamic_.rad() );
+        
+        
+//         vbob_.update_color( light_dynamic_.rad()->begin(), light_dynamic_.rad()->end());
+        vbob_ts_.update_color( light_dynamic_.rad()->begin(), light_dynamic_.rad()->end());
+        
     }
-    
-    size_t num_planes() {
-        return scene_static_.planes().size();
-    }
-    
-    const scene_static &get_scene_static() const {
-        return scene_static_;
+    void draw() {
+//         vbob_.draw_arrays();
+        vbob_ts_.draw_arrays();
     }
 private:
-    
     vec3i base_pos_;
     
     scene_static scene_static_;
@@ -302,50 +358,13 @@ private:
     std::unique_ptr<rad_core> rad_core_;
     
     
+    
+//     vbo_builder vbob_;
+    vbo_builder_tristrip vbob_ts_;
 };
 
 
-class render_unit {
-public:
-    render_unit( std::istream &is, const vec3i &base_pos )
-    : 
-    base_pos_(base_pos),
-    scene_(is, base_pos),
-    vbob_( scene_.num_planes() )
-    {
-        base_pos_.x *= 4;
-        base_pos_.z *= 4;
-        vbob_.update_index_buffer(scene_.get_scene_static().planes().size());
-        vbob_.update_vertices( scene_.get_scene_static().planes().begin(), scene_.get_scene_static().planes().end());
-        
-    }
-    
-    void clear_emit() {
-        scene_.get_light_dynamic()->clear_emit();
-    }
-    void render_light( const vec3f &pos, const vec3f &color ) {
-        light_utils::render_light(scene_.get_light_dynamic()->emit(), scene_.get_scene_static(), pos - base_pos_, color);
-    }
-    
-    void update() {
-        
-        scene_.rad_update();
-        
-        light_dynamic *ld = scene_.get_light_dynamic();
-        vbob_.update_color(ld->rad()->begin(), ld->rad()->end());
-    }
-    void draw() {
-        vbob_.draw_arrays();
-    }
-private:
-    vec3i base_pos_;
-    scene_unit scene_;
-    vbo_builder vbob_;
-    
-};
-
-
-
+#ifdef TEST_OPENCL
 class rad_core_opencl : public rad_core {
 public:
     
@@ -566,7 +585,7 @@ private:
     uint64_t pints_last_time_;
 };
 
-
+#endif
 
 
 class ortho {
@@ -635,7 +654,7 @@ public:
 
 
         gc.set_active();
-        
+#ifdef TEST_OPENCL
         try {
             init_opencl();
         } catch( cl::Error x ) {
@@ -654,7 +673,7 @@ public:
             std::cerr << "opencl initialization failed\ncall: " << x.what() << "\nerror code: " << cl_str_error( x.err() ) << "\n";            
             throw;
         }
-        
+#endif
       //  throw 0;
         
         glMatrixMode(GL_PROJECTION);                        //hello
@@ -711,6 +730,8 @@ public:
         glEnable(GL_DEPTH_TEST);
         glDepthMask(GL_TRUE);
         glDepthFunc(GL_LESS);
+        
+        glShadeModel(GL_FLAT);
     }
 
     void setup_perspective( const player &camera ) {
@@ -833,12 +854,14 @@ public:
 //         vbob.update_index_buffer(scene_static_.planes().size());
 //         vbob.update_vertices( scene_static_.planes().begin(), scene_static_.planes().end());
         
-        std::ifstream is( "cryistal-castle-hidden-ramp.txt" );
+         std::ifstream is( "cryistal-castle-hidden-ramp.txt" );
+        //std::ifstream is( "house1.txt" );
         render_unit runit(is, vec3f( -40.0, -20.0, -40.0 ));
         
-        std::ifstream is2( "cryistal-castle-tree-wave.txt" );
+//         std::ifstream is2( "cryistal-castle-tree-wave.txt" );
+//         std::ifstream is2( "cryistal-castle-hidden-ramp.txt" );
 //         std::ifstream is2( "house1.txt" );
-        render_unit runit2(is2, vec3f( 60.0, -20.0, 0.0 ));
+//         render_unit runit2(is2, vec3f( 60.0, -20.0, 0.0 ));
         
 #if 0
         cl::BufferGL buf;
@@ -871,7 +894,9 @@ public:
         
         //rad_core_ = make_unique<rad_core_lockfree>( scene_static_, light_static_ );
         
-        while ( true ) {
+        bool do_quit = false;
+        
+        while ( !do_quit ) {
 
             //cube c(x1, 0, y1);
 
@@ -894,7 +919,9 @@ public:
             p1.input(keyboard, mouse);
             p1.frame(t_old * 1.0e-3, delta_t);
 
-            int light_speed = 10;
+            int light_speed = 1;
+            
+            do_quit = keyboard.get_keycode(CL_KEY_Q);
             
             if ( keyboard.get_keycode(CL_KEY_LEFT) ) {
                 light_pos.x += light_speed;
@@ -944,7 +971,7 @@ public:
                 //ls.reset_emit();
 //                 light_dynamic_.clear_emit();
                 runit.clear_emit();
-                runit2.clear_emit();
+//                 runit2.clear_emit();
                 //ls.render_light(vec3f( 40, 50.0, light_x ), vec3f(1.0, 1.0, 1.0 ));
                 if ( light_on ) {
                     //ls.render_light(light_pos, vec3f(1.0, 0.8, 0.6 ));
@@ -955,13 +982,13 @@ public:
                     vec3f light_weird = (light_pos * pump_factor_) - base_pos_;
 //                     light_utils::render_light( light_dynamic_.emit(), scene_static_, light_weird, vec3f(1.0, 0.8, 0.6 ));
                     runit.render_light(light_weird, vec3f(1.0, 0.8, 0.6 ));
-                    runit2.render_light(light_weird, vec3f(1.0, 0.8, 0.6 ));
+//                     runit2.render_light(light_weird, vec3f(1.0, 0.8, 0.6 ));
                 }
                 //ls.post();
                 light_changed = false;
             }
             runit.update();
-            runit2.update();
+//             runit2.update();
 //             rad_core2->set_emit( *light_dynamic_.emit() );
 //             rad_core_->set_emit( *light_dynamic_.emit() );
             //ls.render_emit_patches();
@@ -1041,14 +1068,14 @@ public:
 //             vab.draw_arrays();
 //             vbob.draw_arrays();
             runit.draw();
-            runit2.draw();
+//             runit2.draw();
             wnd_.flip(1);
 
 
 
             auto t = CL_System::get_microseconds();
 
-//            std::cout << "fps: " << 1e6 / (t - t_old) << "\n";
+//             std::cout << "fps: " << 1e6 / (t - t_old) << "\n";
             delta_t = (t - t_old) * 1.0e-6;
             t_old = t;
 
@@ -1079,8 +1106,15 @@ public:
 //      plane p( plane::dir_zx_p, vec3f( 0.5, 0.5, 0.5 ));
 
 //      return 0;
-        ortho o;
-        o.start();
+        try {
+            
+     
+            ortho o;
+            o.start();
+        } catch( gl_error_exception x ) {
+            std::cerr << x.what() << std::endl;
+            std::cerr << "bailing out\n";
+        }
 
         return 0;
     }
@@ -1122,7 +1156,7 @@ private:
 //         }
 //     }
 
-    
+#ifdef TEST_OPENCL
     void init_opencl() {
         
         // get opencl platform list.
@@ -1230,7 +1264,8 @@ private:
         
         
     }
-    
+#endif
+
     CL_SetupCore setup_core_;
 
 
@@ -1250,7 +1285,7 @@ private:
 
     const size_t pump_factor_;
     vec3f base_pos_;
-    
+#ifdef TEST_OPENCL    
     cl::Platform cl_platform_;
     std::vector<cl::Device> cl_used_devices_;
     cl::Context cl_context_;
@@ -1260,7 +1295,7 @@ private:
     
     cl::CommandQueue cl_cqueue_;
     cl::Buffer cl_fcolor_;
-    
+#endif
 //     scene_static scene_static_;
 //     
 //     light_static light_static_;

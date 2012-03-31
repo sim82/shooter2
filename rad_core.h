@@ -26,6 +26,7 @@ public:
     virtual void set_emit( const std::vector<vec3f> &emit ) = 0;
 //     virtual bool update() = 0;
     virtual void copy( std::vector<vec3f> *out ) = 0;
+    virtual ~rad_core() {}
 };
 
 

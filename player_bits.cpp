@@ -12,8 +12,13 @@
  *  for more details.
  */
 
-
+#include <thread>
+#include <future>
 #include <ClanLib/core.h>
+#include <ClanLib/Core/XML/xml_token.h>
+#include <ClanLib/Core/XML/xml_writer.h>
+#include <ClanLib/Core/XML/xml_tokenizer.h>
+
 #include "player_bits.h"
 
 player::player() {
@@ -21,7 +26,9 @@ player::player() {
     input_mapper_.add_mapping( CL_KEY_S, &i_backward_);
     input_mapper_.add_mapping( CL_KEY_A, &i_left_);
     input_mapper_.add_mapping( CL_KEY_D, &i_right_);
-
+    input_mapper_.add_mapping( CL_KEY_SHIFT, &i_run_);
+    
+    input_mapper_.write_mappings( "test.xml" );
     pos_.x = 0;
     pos_.y = 0;
     pos_.z = 0;
@@ -49,7 +56,11 @@ void player::frame(double time, double dt) {
 
     CL_Vec4f trans_vec(0.0, 0.0, 0.0, 1.0);
 
-    const float move_speed = 4.0; // 4 m/s
+    
+    
+    const float base_speed = 4; // 4 m/s
+    const float run_multiplier = 4;
+    const float move_speed = i_run_ ? base_speed * run_multiplier : base_speed;
 
     if ( i_forward_ ) {
         trans_vec.z -= move_speed * dt; // NOTE: translation is in 'player head coordinate system' so forward is -z
@@ -95,4 +106,20 @@ void input_mapper::input(const CL_InputDevice& dev) {
 for ( const mapping &m : mappings_ ) {
         *m.indicator_ = dev.get_keycode(m.keycode_);
     }
+}
+void input_mapper::write_mappings(const char* filename) {
+
+    CL_DomDocument document;
+    CL_DomElement root = document.create_element("my-structure");
+    document.append_child(root);
+    root.set_child_string("name", "xxx");
+    root.set_child_string("scale", CL_StringHelp::float_to_text(666));
+    root.set_child_bool("enabled", false);
+    CL_File file(filename, CL_File::create_always, CL_File::access_read_write);
+    document.save(file, false);
+    
+    auto x = std::async( [] { return std::string( "bla bla bla" ); } );
+    
+    std::cout << "bla: " << x.get() << "\n";
+    
 }

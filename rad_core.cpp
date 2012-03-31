@@ -17,7 +17,7 @@
 
 #include <thread>
 #include <mutex>
-
+#include <atomic>
 #include <ClanLib/core.h>
 
 #include "scene_bits.h"
@@ -25,6 +25,24 @@
 #include "vec_unit.h"
 #include "aligned_buffer.h"
 #include "misc_utils.h"
+
+class join_threads {
+  
+public:
+    join_threads( std::vector<std::thread> *threads ) : threads_( threads ) {}
+    
+    ~join_threads() {
+        for( size_t i = 0; i < threads_->size(); ++i ) {
+            if( (*threads_)[i].joinable() ) {
+                (*threads_)[i].join();
+            }
+        }
+    }
+    
+private:
+    std::vector<std::thread> * const threads_;
+    
+};
 
 class rad_core_threaded: public rad_core {
     typedef std::mutex lock_type;
@@ -79,7 +97,10 @@ public:
             //planes_(planes),
             pints_(0),
             pints_last_(0),
-            pints_last_time_(0)
+            pints_last_time_(0),
+            start_flag_(false),
+            abort_flag_(false),
+            joiner_( &threads_ )
     {
 
         
@@ -94,7 +115,7 @@ public:
         } else {
 #if 1
             const size_t num_planes = scene_static_.planes().size();
-            const size_t num_threads = 1;
+            const size_t num_threads = 3;
             
             auto part = calc_plane_distribution(num_threads);
             for ( size_t i = 0; i < num_threads; ++i ) {
@@ -143,11 +164,22 @@ public:
 //          thread3_ = std::thread( [&]() { work(planes_.size()/4 * 3, planes_.size()/4 * 4);
 //          });
         }
+        
+        start_flag_.store(true);
     }
 
+    virtual ~rad_core_threaded() {
+        std::cerr << "~rad_core_threaded: request thread abort" << std::endl;
+        std::cerr << "if the program hangs after this point, there is an error in the thread lifecycle management..." << std::endl;
+        
+        abort_flag_.store(true);
+    }
+    
     virtual void set_emit( const std::vector<vec3f> &emit ) {
         std::lock_guard<lock_type>lock(mtx_);
 
+//         std::cout << "emit: " << emit_new_.size() << " " << emit.size() << "\n";
+        
         assert( emit_new_.size() == emit.size() );
 
         emit_new_.assign( std::begin(emit), std::end(emit));
@@ -197,7 +229,9 @@ public:
 private:
 
     void work( size_t first, size_t last, size_t rank ) {
-        while (true) {
+        while( !start_flag_.load() && !abort_flag_.load() ) {}
+        
+        while (!abort_flag_.load()) {
             if( rank == 0 )
             {
                 std::lock_guard<lock_type> lock(mtx_);
@@ -225,6 +259,7 @@ private:
             }
 
         }
+        std::cerr << "rad_core_threaded: worker thread exit: " << rank << std::endl;
     }
 
     void do_radiosity_sse( size_t first, size_t last ) {
@@ -366,6 +401,11 @@ private:
     size_t pints_;
     size_t pints_last_;
     cl_ubyte64 pints_last_time_;
+    
+    std::atomic<bool> start_flag_;
+    std::atomic<bool> abort_flag_;
+    
+    join_threads joiner_;
 };
 
 class rad_core_lockfree: public rad_core {

@@ -135,7 +135,7 @@ public:
         return dir_ == other.dir_;
     }
 
-
+    static vec3i normali( dir_type dt ) ;
     static vec3f normal( dir_type dt ) ;
 
     static vec3f primary( dir_type dt ) ;
@@ -224,6 +224,10 @@ public:
     const vec3f &col_diff() const {
         return col_diff_;
     }
+    
+    const std::array<vec3f,4> &verts() const {
+        return verts_;
+    }
 
 private:
     dir_type dir_;
@@ -239,13 +243,17 @@ private:
 
 class scene_static {
 public:
+    typedef std::pair<uint32_t,uint32_t> idx_pair;
+    const static uint32_t restart_idx;// = 0xFFFFFFFF;
+    
     scene_static( const vec3f &base_pos ) : base_pos_(base_pos) {}
     scene_static() {}
     
     void init_solid_from_crystal( std::istream &is, size_t pump ) ;
     void init_solid( const std::vector<crystal_bits::matrix_ptr> &slices );
         
-    void init_planes() ;
+    void init_planes();
+    void init_strips();
     
     const std::vector<plane> &planes() const {
         return planes_;
@@ -260,10 +268,29 @@ public:
         return solid_.hash();
     }
 
+    const std::vector<vec3f> &strip_vecs() const {
+        return strip_vecs_;
+    }
+    const std::vector<uint32_t> &strip_idx() const {
+        return strip_idx_;
+    }
+    
+    const std::vector<idx_pair> &strip_idx_pairs() const {
+        return strip_idx_pairs_;
+    }
+    
 private:
     std::vector<plane> planes_;
     bitmap3d solid_;
     vec3f base_pos_;
+    
+    std::vector<vec3f> strip_vecs_;
+    std::vector<uint32_t> strip_idx_;
+    
+    
+    std::vector<idx_pair> strip_idx_pairs_;
+    
+    
 };
 
 

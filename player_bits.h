@@ -17,6 +17,7 @@
 
 #include <ClanLib/core.h>
 #include <ClanLib/display.h>
+
 #include "misc_utils.h"
 
 class input_mapper {
@@ -25,7 +26,8 @@ public:
     void add_mapping( int keycode, bool *indicator ) ;
 
     void input( const CL_InputDevice &dev ) ;
-
+    
+    void write_mappings( const char *filename ) ;
 private:
 
     struct mapping {
@@ -40,6 +42,8 @@ private:
 
     std::vector<mapping> mappings_;
 
+    
+    
 };
 
 class mouse_mapper {
@@ -75,6 +79,7 @@ public:
     float rot_y() const { return rot_y_; }
 
 private:
+    bool i_run_;
     bool i_forward_;
     bool i_backward_;
     bool i_left_;

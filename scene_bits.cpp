@@ -19,6 +19,8 @@
 #include "misc_utils.h"
 #include "scene_bits.h"
 
+const uint32_t scene_static::restart_idx = 0x1FFFFFFF;
+
 bool util::occluded2(vec3i p0, vec3i p1, const bitmap3d& solid) {
     // 3d bresenham, ripped from http://www.cobrabytes.com/index.php?topic=1150.0
 
@@ -307,6 +309,25 @@ bool util::occluded(vec3i p0, vec3i p1, const bitmap3d& solid) {
     return false;
 
 }
+vec3i plane::normali(plane::dir_type dt) {
+   switch ( dt ) {
+    case dir_xy_p:
+        return vec3i( 0, 0, 1 );
+    case dir_xy_n:
+        return vec3i( 0, 0,-1 );
+    case dir_yz_p:
+        return vec3i( 1, 0, 0 );
+    case dir_yz_n:
+        return vec3i(-1, 0, 0 );
+    case dir_zx_p:
+        return vec3i( 0, 1, 0 );
+    case dir_zx_n:
+    default:
+        return vec3i( 0,-1, 0 );
+    }
+    
+}
+
 vec3f plane::normal(plane::dir_type dt) {
     switch ( dt ) {
     case dir_xy_p:
@@ -449,6 +470,101 @@ plane::plane(plane::dir_type d, const vec3f& base_pos, const vec3i& pos, float s
 
 
 }
+
+class face_iterator {
+public:
+    face_iterator( const bitmap3d &bm, plane::dir_type dir ) 
+    : 
+    x_(0), y_(0), z_(0),
+    bitmap_(bm), dir_(dir), norm_( plane::normali(dir))
+    {
+        
+    }
+    
+    bool is_face() {
+        
+        
+        return bitmap_(x_, y_, z_) && !bitmap_(x_ + norm_.x, y_ + norm_.y, z_ + norm_.z );
+        
+//         switch( dir_ ) {
+//         case plane::dir_zx_p:
+//             return bitmap_(x_, y_, z_) && !bitmap_(x_, y_ + 1, z_);
+//         case plane::dir_zx_n:
+//             return bitmap_(x_, y_, z_) && !bitmap_(x_, y_ - 1, z_);
+//         case plane::dir_yz_p:
+//             return bitmap_(x_, y_, z_) && !bitmap_(x_ + 1, y_, z_);
+//         case plane::dir_yz_n:
+//             return bitmap_(x_, y_, z_) && !bitmap_(x_ - 1, y_, z_);
+//         case plane::dir_xy_p:
+//             return bitmap_(x_, y_, z_) && !bitmap_(x_, y_, z_ + 1);
+//         case plane::dir_xy_p:
+//             return bitmap_(x_, y_, z_) && !bitmap_(x_, y_, z_ + 1);
+//             
+//         }
+    }
+    
+    bool inc() {
+        switch( dir_ ) {
+        case plane::dir_zx_p:
+        case plane::dir_zx_n:
+            ++x_;
+            if( x_ >= bitmap_.x() ) {
+                ++z_;
+                x_ = 0;
+            }
+            if( z_ >= bitmap_.z() ) {
+                ++y_;
+                z_ = 0;
+            }
+            
+            return y_ >= bitmap_.y();
+            
+            
+        case plane::dir_yz_p:
+        case plane::dir_yz_n:
+            ++z_;
+            if( z_ >= bitmap_.z() ) {
+                ++y_;
+                z_ = 0;
+            }
+            if( y_ >= bitmap_.y() ) {
+                ++x_;
+                y_ = 0;
+            }
+            
+            return x_ >= bitmap_.x();
+            
+        case plane::dir_xy_p:
+        case plane::dir_xy_n:
+            ++y_;
+            if( y_ >= bitmap_.y() ) {
+                ++x_;
+                y_ = 0;
+            }
+            if( x_ >= bitmap_.x() ) {
+                ++z_;
+                    x_ = 0;
+            }
+            
+            return z_ >= bitmap_.z();
+        default:
+            throw std::runtime_error( "unknown plane::dir_type" );    
+        }
+        
+    }
+    vec3i pos() const {
+        return vec3i( x_, y_, z_ );
+    }
+private:
+    size_t x_, y_, z_;
+    
+    const bitmap3d &bitmap_;
+    plane::dir_type dir_;
+    vec3i norm_;
+};
+
+
+
 void scene_static::init_solid(const std::vector< crystal_bits::matrix_ptr >& slices) {
     const auto &slice0 = *slices.at(0);
     size_t size_z = slice0.size1();
@@ -491,6 +607,7 @@ void scene_static::init_solid(const std::vector< crystal_bits::matrix_ptr >& sli
 
         add = !add;
     }
+
 }
 void scene_static::init_planes() {
 
@@ -506,6 +623,8 @@ void scene_static::init_planes() {
     int pump_factor_ = 2;
     float scale = 1.0 / pump_factor_;
 
+    
+#if 0
     for ( int y = 0; y < int(solid_.y()); ++y ) {
         for ( size_t z = 0; z < solid_.z(); ++z ) {
             for ( size_t x = 0; x < solid_.x(); ++x ) {
@@ -541,6 +660,24 @@ void scene_static::init_planes() {
             }
         }
     }
+#else
+    for( auto dir : {plane::dir_zx_p, plane::dir_zx_n, plane::dir_yz_p, plane::dir_yz_n, plane::dir_xy_p, plane::dir_xy_n} ) {
+        face_iterator it(solidc, dir);
+        
+        do {
+            if( it.is_face() ) {
+                vec3i pos = it.pos();
+                
+                if( dir == plane::dir_zx_n && pos.y == 0 ) {
+                    continue; // skip faces on the underside of the level
+                }
+                planes_.push_back( plane( dir, base_pos_, pos, scale, 1.0));
+            }
+            
+        } while( !it.inc() );
+        
+    }
+#endif
 //      for( size_t z = 0; z < height_.size(); ++z ) {
 //          for( size_t x = 0; x < height_[z].size(); ++x ) {
 //              planes_.push_back( plane( plane::dir_zx_n, base_pos, vec3i( x, 20, z ), 0.0));
@@ -554,6 +691,250 @@ void scene_static::init_planes() {
 
 
 }
+const static std::array<vec3f, 4>reorder_strip( const std::array<vec3f, 4> &in, plane::dir_type dir ) {
+    switch( dir ) {
+    case plane::dir_zx_p:
+    case plane::dir_yz_p:
+    case plane::dir_xy_p:
+    default:
+        return std::array<vec3f, 4>{in[0], in[1], in[3], in[2]};
+        
+        
+    case plane::dir_zx_n:
+    case plane::dir_yz_n:
+    case plane::dir_xy_n:
+        //return std::array<vec3f, 4>{in[2], in[1], in[3], in[0]};
+        return std::array<vec3f, 4>{in[3], in[0], in[2], in[1]};
+    };
+    
+}
+
+#if 1
+void scene_static::init_strips() {
+
+   
+    const auto &solidc = solid_;
+
+    vec3i light_pos( 10, 10, 10 );
+
+    int pump_factor_ = 2;
+    float scale = 1.0 / pump_factor_;
+
+    
+    size_t num_restart = 0;
+    bool restart = false;
+    for( auto dir : {plane::dir_zx_p, plane::dir_zx_n, plane::dir_yz_p, plane::dir_yz_n, plane::dir_xy_p, plane::dir_xy_n} ) {
+//     for( auto dir : {plane::dir_zx_n, plane::dir_zx_n} ) {
+        face_iterator it(solidc, dir);
+        
+        do {
+            if( it.is_face() ) {
+                vec3i pos = it.pos();
+                
+                if( dir == plane::dir_zx_n && pos.y == 0 ) {
+                    continue; // skip faces on the underside of the level
+                }
+                planes_.push_back( plane( dir, base_pos_, pos, scale, 1.0));
+                
+                auto &qverts = planes_.back().verts();
+                        
+                auto verts = reorder_strip(qverts, dir);
+                uint32_t first_idx = strip_vecs_.size();
+                if( restart ) {
+                    //strip_idx_.push_back(restart_idx);
+                    // output degenerated tris to jump to restart position
+                    if( true ) {
+                        strip_idx_.push_back(strip_vecs_.size()-1);
+                        strip_idx_.push_back(strip_vecs_.size());
+                    } else {
+                        strip_idx_.push_back(strip_vecs_.size());
+                        
+                        vec3f t = strip_vecs().back();
+                        strip_vecs_.push_back(t);
+                        strip_idx_.push_back(strip_vecs_.size());
+                        strip_vecs_.push_back(verts[0]);
+                    }
+                    
+                    strip_idx_.push_back(strip_vecs_.size());
+                    strip_vecs_.push_back(verts[0]);
+                    
+                    strip_idx_.push_back(strip_vecs_.size());
+                    strip_vecs_.push_back(verts[1]);
+                    
+                    strip_idx_.push_back(strip_vecs_.size());
+                    strip_vecs_.push_back(verts[2]);
+                    
+                    strip_idx_.push_back(strip_vecs_.size());
+                    strip_vecs_.push_back(verts[3]);
+                    
+                    restart = false;
+                } else {
+                    strip_idx_.push_back(strip_vecs_.size());
+                    strip_vecs_.push_back(verts[2]);
+                            
+                    strip_idx_.push_back(strip_vecs_.size());
+                    strip_vecs_.push_back(verts[3]);
+                }
+                strip_idx_pairs_.emplace_back( first_idx, strip_vecs_.size());
+                
+            } else {
+                restart = true;
+            }
+            
+        } while( !it.inc() );
+        restart = true;
+        
+    }
+
+    
+    std::cout << "planes (striped): " << planes_.size() << "\n";
+    std::cout << "vecs: " << strip_vecs_.size() << "\n";
+    planes_.shrink_to_fit();
+
+
+
+}
+
+#else
+void scene_static::init_strips() {
+
+   // vec3f base_pos( -(solid_.x() / 2.0 + 0.5), -10.5, -(solid_.z() / 2.0 + 0.5));
+    //base_pos_ = base_pos;
+
+//         std::cout << "base pos: " << base_pos_ << " " << solid_.x() << "\n";
+
+    const auto &solidc = solid_;
+
+    vec3i light_pos( 10, 10, 10 );
+
+    int pump_factor_ = 2;
+    float scale = 1.0 / pump_factor_;
+
+    bool restart0 = true;
+    bool restart1 = true;
+    
+    std::vector<vec3f> vecs0;
+    std::vector<uint32_t> idx0;
+    
+    typedef std::pair<uint32_t,uint32_t> idx_pair;
+    std::vector<idx_pair> idx_pairs0;
+    
+    
+    std::vector<vec3f> vecs1;
+    std::vector<uint32_t> idx1;
+    std::vector<idx_pair> idx_pairs1;
+    
+    uint32_t restart_idx = 0xFFFFFFFF;
+    
+    std::vector<plane> planes;
+    
+    for ( int y = 0; y < int(solid_.y()); ++y ) {
+        for ( size_t z = 0; z < solid_.z(); ++z ) {
+            for ( size_t x = 0; x < solid_.x(); ++x ) {
+                if ( solid_(x, y, z) ) {
+
+//                    const bool occ = util::occluded( light_pos, vec3i(x,y,z), solid_ );
+
+                    float energy = 1.0;
+
+
+                    if ( !solidc(x,y+1,z)) {
+                    
+                        
+                        planes.push_back( plane( plane::dir_zx_p, base_pos_, vec3i( x, y, z ), scale, energy));
+                        
+                        auto &verts = planes.back().verts();
+                        
+                        uint32_t first_idx = vecs0.size();
+                        if( restart0 ) {
+                            idx0.push_back(restart_idx);
+                            idx0.push_back(vecs0.size());
+                            vecs0.push_back(verts[1]);
+                            
+                            idx0.push_back(vecs0.size());
+                            vecs0.push_back(verts[0]);
+                            
+                            idx0.push_back(vecs0.size());
+                            vecs0.push_back(verts[2]);
+                            
+                            idx0.push_back(vecs0.size());
+                            vecs0.push_back(verts[3]);
+                            
+                            restart0 = false;
+                        } else {
+                            idx0.push_back(vecs0.size());
+                            vecs0.push_back(verts[2]);
+                            
+                            idx0.push_back(vecs0.size());
+                            vecs0.push_back(verts[3]);
+                        }
+                        idx_pairs0.emplace_back( first_idx, vecs0.size());
+                        
+                        //planes.push_back(std::move(p));
+                        
+                    } else {
+                        restart0 = true;
+                    }
+                    if ( y > 0 && !solidc(x,y-1,z)) {
+                        
+                        
+                        
+                        planes.push_back( plane( plane::dir_zx_n, base_pos_, vec3i( x, y, z ), scale, energy));
+                        
+                        auto &verts = planes.back().verts();
+                        uint32_t first_idx = vecs1.size();
+                        if( restart1 ) {
+                            idx1.push_back(restart_idx);
+                            idx1.push_back(vecs1.size());
+                            vecs1.push_back(verts[1]);
+                            
+                            idx1.push_back(vecs1.size());
+                            vecs1.push_back(verts[0]);
+                            
+                            idx1.push_back(vecs1.size());
+                            vecs1.push_back(verts[2]);
+                            
+                            idx1.push_back(vecs1.size());
+                            vecs1.push_back(verts[3]);
+                            
+                            restart1 = false;
+                        } else {
+                            idx1.push_back(vecs1.size());
+                            vecs1.push_back(verts[2]);
+                            
+                            idx1.push_back(vecs1.size());
+                            vecs1.push_back(verts[3]);
+                        }
+                        idx_pairs1.emplace_back( first_idx, vecs0.size());
+                        //planes.push_back(std::move(p));
+                    } else {
+                        restart1 = true;
+                        
+                    }
+                        
+
+
+                } else {
+                    restart0 = true;
+                    restart1 = true;
+                }
+            }
+        }
+    }
+//      for( size_t z = 0; z < height_.size(); ++z ) {
+//          for( size_t x = 0; x < height_[z].size(); ++x ) {
+//              planes_.push_back( plane( plane::dir_zx_n, base_pos, vec3i( x, 20, z ), 0.0));
+//          }
+//      }
+
+
+    std::cout << "planes: " << planes_.size() << "\n";
+    planes_.shrink_to_fit();
+
+
+
+}
+#endif
 void light_utils::render_light(std::vector< vec3f >* emitptr, const scene_static& scene, const vec3f& light_pos, const vec3f& light_color) {
     assert( emitptr != nullptr );
 
