@@ -13,7 +13,8 @@
  */
 
 #include <fstream>
-
+#include <iomanip>
+#include <functional>
 #include <boost/numeric/ublas/matrix.hpp>
 #include <boost/numeric/ublas/matrix_proxy.hpp>
 #include "misc_utils.h"
@@ -476,7 +477,7 @@ public:
     face_iterator( const bitmap3d &bm, plane::dir_type dir ) 
     : 
     x_(0), y_(0), z_(0),
-    bitmap_(bm), dir_(dir), norm_( plane::normali(dir))
+    bitmap_(bm), dir_(dir), norm_( plane::normali(dir)), last_dim_changed_(false)
     {
         
     }
@@ -512,10 +513,13 @@ public:
                 ++z_;
                 x_ = 0;
             }
-            if( z_ >= bitmap_.z() ) {
+            
+            last_dim_changed_ = z_ >= bitmap_.z();
+            if( last_dim_changed_ ) {
                 ++y_;
                 z_ = 0;
-            }
+                last_dim_changed_ = true;
+            } 
             
             return y_ >= bitmap_.y();
             
@@ -527,7 +531,9 @@ public:
                 ++y_;
                 z_ = 0;
             }
-            if( y_ >= bitmap_.y() ) {
+            
+            last_dim_changed_ = y_ >= bitmap_.y();
+            if( last_dim_changed_ ) {
                 ++x_;
                 y_ = 0;
             }
@@ -541,9 +547,10 @@ public:
                 ++x_;
                 y_ = 0;
             }
-            if( x_ >= bitmap_.x() ) {
+            last_dim_changed_ = x_ >= bitmap_.x();
+            if( last_dim_changed_ ) {
                 ++z_;
-                    x_ = 0;
+                x_ = 0;
             }
             
             return z_ >= bitmap_.z();
@@ -555,14 +562,315 @@ public:
     vec3i pos() const {
         return vec3i( x_, y_, z_ );
     }
+    
+    bool last_dim_changed() const {
+        return last_dim_changed_;
+    }
+    vec2i pos2d() const {
+        switch( dir_ ) {
+        case plane::dir_zx_p:
+        case plane::dir_zx_n:
+            return vec2i(z_,x_);
+        case plane::dir_yz_p:
+        case plane::dir_yz_n:
+            return vec2i(y_,z_);
+        case plane::dir_xy_p:
+        case plane::dir_xy_n:
+        default: 
+            return vec2i(x_,y_);
+        }
+    }
+    
+    int last_dim_pos() const {
+        switch( dir_ ) {
+        case plane::dir_zx_p:
+        case plane::dir_zx_n:
+            return y_;
+        case plane::dir_yz_p:
+        case plane::dir_yz_n:
+            return x_;
+        case plane::dir_xy_p:
+        case plane::dir_xy_n:
+        default: 
+            return z_;
+        }
+    }
+    
 private:
     size_t x_, y_, z_;
     
     const bitmap3d &bitmap_;
     plane::dir_type dir_;
     vec3i norm_;
+    
+    bool last_dim_changed_;
 };
 
+
+
+class lightmap_atlas_slice {
+public:
+    lightmap_atlas_slice( plane::dir_type dir, int last_dim ) 
+     : 
+     dir_(dir),
+     last_dim_(last_dim),
+     closed_(false)
+    {
+        
+    }
+    
+    ~lightmap_atlas_slice() {
+        if( false ) {
+            std::stringstream name;
+            
+            name << "la_" << plane::dir_to_string(dir_) << "_" << std::setw(4) << std::setfill('0') << last_dim_ << ".pnm";
+            
+            std::cout << "~lightmap_atlas() writing: " << name.str() << std::endl;
+            write_pnm(name.str().c_str());
+        }
+    }
+    
+    
+    
+    void alloc( vec2i p ) {
+        
+        assert( !closed_ );
+        alloc_tex_.push_back(p);
+    }
+    
+    void close() {
+        max_size();
+        closed_ = true;
+    }
+    
+    vec2i max_size () {
+        if( !closed_ ) {
+            
+            vec2i smax(0,0);
+        
+            std::for_each( alloc_tex_.begin(), alloc_tex_.end(), [&]( vec2i p ) {
+                smax.x = std::max( smax.x, p.x );
+                smax.y = std::max( smax.y, p.y );
+            });
+            
+            max_size_ = smax;
+
+        }
+        
+        
+        return max_size_;
+    }
+    
+    int width() const {
+        assert( closed_ );
+        
+        return max_size_.x;
+    }
+    
+    int height() const {
+        assert( closed_ );
+        
+        return max_size_.y;
+    }
+    
+    bool is_alloc( vec2i v ) const {
+        // yes I know, this makes me look like a blithering idiot...
+        return std::find( alloc_tex_.begin(), alloc_tex_.end(), v ) != alloc_tex_.end();
+    }
+private:
+    
+    
+    std::vector<vec2i> alloc_tex_;
+    plane::dir_type dir_;
+    int last_dim_;
+    mutable bool closed_;
+    mutable vec2i max_size_;
+    
+    void write_pnm(const char* c_str) {
+        vec2i smax = max_size();
+        
+        if( smax.x <= 0 && smax.y <= 0 ) {
+            return;
+            
+        }
+        std::ofstream os(c_str);
+        
+        os << "P1\n";
+        os << smax.x + 1 << " " << smax.y + 1<< "\n";
+        for( int i = 0; i <= smax.y; ++i ) {
+            for( int j = 0; j <= smax.x; ++j ) {
+                if( std::find( alloc_tex_.begin(), alloc_tex_.end(), vec2i( i, j )) != alloc_tex_.end()) {
+                    os << "1 ";
+                } else {
+                    os << "0 ";
+                }
+            }
+            os << "\n";
+        }
+    }
+    
+};
+
+
+class binpacker {
+
+public:
+    binpacker( vec2i size ) : size_(size) {}
+    
+    
+    typedef std::tuple<size_t,int,int,const lightmap_atlas_slice *> bin_mapping;
+    std::vector<bin_mapping> realize() {
+        std::vector<bin_mapping> out;
+        
+        for( size_t i_bin = 0; i_bin < bins_.size(); ++i_bin ) {
+            const auto &bin = bins_.at(i_bin);
+            
+            for( const auto & level : bin.levels() ) {
+                int y_ptr = level.first;
+                
+                for( const auto & spair : level.second.slices() ) {
+                    int x_ptr = spair.first;
+                    
+//                     std::cout << i_bin << " " << y_ptr << " " << x_ptr << ": " << spair.second << "\n";
+                    
+                    out.emplace_back(i_bin, y_ptr, x_ptr, spair.second);
+                }
+            }
+        }
+        
+        return out;
+    }
+    ~binpacker() {
+        std::cout << "binpacker(): " << bins_.size() << "\n";
+    }
+    
+    void insert( lightmap_atlas_slice *slice ) {
+        auto size = slice->max_size();
+        
+        
+        // first test if existing bin/level can take the slice
+        for( auto & b : bins_ ) {
+            auto l = b.fit(size.y, size.x);
+            
+            if( l != nullptr ) {
+                l->insert( size.x, slice );
+                return;
+            }
+        }
+        
+        // secondly create new level in first bin with enough space
+        for( auto & b : bins_ ) {
+            auto l = b.create_level( size.y );
+            
+            if( l != nullptr ) {
+                assert( l->fit(size.x ) && "bin width to small");
+                l->insert(size.x, slice );
+                
+                return;
+            }
+        }
+        
+        // thirdly create new bin and level
+        bins_.emplace_back( size_ );
+        auto l = bins_.back().create_level( size.y );
+        
+        assert( l != nullptr && "could not create level in new bin. impossible to fit" );
+        assert( l->fit(size.x ) && "bin width to small in new bin. impossible to fit");
+        l->insert(size.x, slice );
+    }
+    
+    
+private:
+    class bin {
+    public:
+        
+        
+        bin( bin && ) = default;
+        bin & operator=(bin &&) = default;
+        
+        bin( vec2i size ) : width_(size.x), height_(size.y), ptr_(0) {}
+    
+        
+        class level {
+        public:
+            
+            typedef std::pair<int,const lightmap_atlas_slice *> ps_pair;
+            
+            level( int height, int width ) : height_(height), width_(width), ptr_(0) {
+                
+            }
+            
+            bool fit( int width ) {
+                return ptr_ + width <= width_;
+            }
+            
+            void insert( int width, const lightmap_atlas_slice *slice ) {
+                assert( ptr_ <= width_ );
+                slices_.emplace_back( ptr_, slice );
+                ptr_ += width;
+                
+                assert( ptr_ <= width_ );
+            }
+            
+            int height() const {
+                return height_;
+            }
+            
+            const std::vector<ps_pair> &slices() const {
+                return slices_;
+            }
+            
+        private:
+            int height_;
+            int width_;
+            int ptr_;
+            
+            
+            std::vector<ps_pair> slices_;
+        };
+        
+        typedef std::pair<int,level> pl_pair;
+        
+        level *fit( int height, int width ) {
+            for( auto & l : levels_ ) {
+                if( l.second.height() >= height ) {
+                    if( l.second.fit( width ) ) {
+                        return &(l.second);
+                    }
+                }
+             
+            }
+            return nullptr;
+        }
+        
+        level *create_level( int height ) {
+            if( ptr_ + height <= height_ ) {
+                levels_.emplace_back(ptr_, level(height, width_));
+                ptr_ += height;
+                return &(levels_.back().second);
+            }
+            return nullptr;
+        }
+        const std::vector<pl_pair> &levels() const {
+            return levels_;
+        }
+      
+        
+    private:
+        
+        int width_;
+        int height_;
+        std::vector<pl_pair> levels_;
+        int ptr_;
+        
+    };
+    
+    const vec2i size_;
+    std::vector<bin> bins_;
+   
+    
+    
+};
 
 
 void scene_static::init_solid(const std::vector< crystal_bits::matrix_ptr >& slices) {
@@ -697,19 +1005,101 @@ const static std::array<vec3f, 4>reorder_strip( const std::array<vec3f, 4> &in, 
     case plane::dir_yz_p:
     case plane::dir_xy_p:
     default:
-        return std::array<vec3f, 4>{in[0], in[1], in[3], in[2]};
+        return std::array<vec3f, 4>{{in[0], in[1], in[3], in[2]}};
+        
         
         
     case plane::dir_zx_n:
     case plane::dir_yz_n:
     case plane::dir_xy_n:
         //return std::array<vec3f, 4>{in[2], in[1], in[3], in[0]};
-        return std::array<vec3f, 4>{in[3], in[0], in[2], in[1]};
+        return std::array<vec3f, 4>{{in[3], in[0], in[2], in[1]}};
     };
     
 }
 
-#if 1
+static void write_rgb_pnm( std::ostream &os, int width, int height, const std::vector<vec3i> &bm, std::function<size_t (int,int)> coord ) {
+    os << "P3\n";
+    os << width << " " << height << "\n";
+    os << 255 << "\n";
+    
+    for( int i = 0; i < height; ++i ) {
+        for( int j = 0; j < width; ++j ) {
+            vec3i col = bm[coord(j, i)];
+            
+            os << col.r << " " << col.g << " " << col.b << " ";
+            
+        }
+        
+        os << "\n";
+    }
+    
+}
+
+static void fill_rect( int x, int y, int width, int height, std::vector<vec3i> *bm, std::function<size_t (int,int)> coord, vec3i color ) {
+    for( int i = y; i < y + height; ++i ) {
+        for( int j = x; j < x + width; ++j ) {
+            (*bm)[coord(j, i)] = color;
+        }
+    }
+}
+
+static void blit_slice( int x, int y, const lightmap_atlas_slice *slice, std::vector<vec3i> *bm, std::function<size_t (int,int)> coord, vec3i color ) {
+    for( int i = y; i < y + slice->height(); ++i ) {
+        for( int j = x; j < x + slice->width(); ++j ) {
+            
+            if( !true || slice->is_alloc(vec2i(j - x, i - y)) ) {
+                (*bm)[coord(j, i)] = color;
+            }
+        }
+    }
+}
+
+
+static void visualize( int width, int height, const std::vector< binpacker::bin_mapping > &mapping) {
+    
+    auto coord = [=]( int x, int y ) { assert( x >= 0 && x < width ); assert( y >= 0 && y < height ); return x + y * width; };
+    std::vector<std::vector<vec3i>> binmaps;
+    
+    vec3i next_col( 128, 128, 128 );
+    
+    for( const auto &bm : mapping ) {
+        size_t bin;
+        int y;
+        int x;
+        const lightmap_atlas_slice *slice;
+
+        std::tie(bin, y, x, slice) = bm; // c++11 is just ridiculously good...
+        
+        std::cout << bin << " " << y << " " << x << ": " << slice << "\n";
+        
+        while( bin >= binmaps.size() ) {
+            binmaps.emplace_back( width * height, vec3i(0,0,0));
+        }
+        
+        
+        //fill_rect( x, y, slice->width(), slice->height(), &binmaps.at(bin), coord, next_col );
+        blit_slice( x, y, slice, &binmaps.at(bin), coord, next_col );
+        
+        // get some variation into the colors
+        next_col.r = (next_col.r + 37) % 256;
+        next_col.g = (next_col.g + 53) % 256;
+        next_col.b = (next_col.b + 79) % 256;
+    }
+    
+    for( size_t i = 0; i < binmaps.size(); ++i ) {
+        std::stringstream ss;
+        ss << "bin_" << std::setw(4) << std::setfill('0') << i << ".pnm";
+        
+        std::ofstream os( ss.str().c_str() );
+        assert( os.good() );
+        write_rgb_pnm(os, width, height, binmaps[i], coord);
+        
+    }
+    
+}
+
+
 void scene_static::init_strips() {
 
    
@@ -720,20 +1110,32 @@ void scene_static::init_strips() {
     int pump_factor_ = 2;
     float scale = 1.0 / pump_factor_;
 
+    std::vector<lightmap_atlas_slice> atlases;
     
-    size_t num_restart = 0;
+    
     bool restart = false;
-    for( auto dir : {plane::dir_zx_p, plane::dir_zx_n, plane::dir_yz_p, plane::dir_yz_n, plane::dir_xy_p, plane::dir_xy_n} ) {
+    for( plane::dir_type dir : {plane::dir_zx_p, plane::dir_zx_n, plane::dir_yz_p, plane::dir_yz_n, plane::dir_xy_p, plane::dir_xy_n} ) {
 //     for( auto dir : {plane::dir_zx_n, plane::dir_zx_n} ) {
         face_iterator it(solidc, dir);
-        
+        atlases.push_back(lightmap_atlas_slice( dir, it.last_dim_pos()));
         do {
+            if( it.last_dim_changed() ) {
+                atlases.push_back(lightmap_atlas_slice(dir, it.last_dim_pos()));
+            }
+            
+            auto &atlas = atlases.back();
+            
             if( it.is_face() ) {
                 vec3i pos = it.pos();
                 
                 if( dir == plane::dir_zx_n && pos.y == 0 ) {
                     continue; // skip faces on the underside of the level
                 }
+                
+                
+                atlas.alloc(it.pos2d());
+                
+                
                 planes_.push_back( plane( dir, base_pos_, pos, scale, 1.0));
                 
                 auto &qverts = planes_.back().verts();
@@ -792,149 +1194,28 @@ void scene_static::init_strips() {
     planes_.shrink_to_fit();
 
 
-
-}
-
-#else
-void scene_static::init_strips() {
-
-   // vec3f base_pos( -(solid_.x() / 2.0 + 0.5), -10.5, -(solid_.z() / 2.0 + 0.5));
-    //base_pos_ = base_pos;
-
-//         std::cout << "base pos: " << base_pos_ << " " << solid_.x() << "\n";
-
-    const auto &solidc = solid_;
-
-    vec3i light_pos( 10, 10, 10 );
-
-    int pump_factor_ = 2;
-    float scale = 1.0 / pump_factor_;
-
-    bool restart0 = true;
-    bool restart1 = true;
+    // close all altlas strips, so that the remaining stuff can be done with const refs/ptrs.
+    std::for_each( atlases.begin(), atlases.end(), [](lightmap_atlas_slice &s) {s.close();});
     
-    std::vector<vec3f> vecs0;
-    std::vector<uint32_t> idx0;
+    const int bin_width = 256;
+    const int bin_height = bin_width;
     
-    typedef std::pair<uint32_t,uint32_t> idx_pair;
-    std::vector<idx_pair> idx_pairs0;
+    binpacker bp( vec2i( bin_width, bin_height ) );
+    std::sort( atlases.begin(), atlases.end(), [] ( const lightmap_atlas_slice &s1, const lightmap_atlas_slice &s2 ) {
+        return s1.height() > s2.height();
+    });
     
-    
-    std::vector<vec3f> vecs1;
-    std::vector<uint32_t> idx1;
-    std::vector<idx_pair> idx_pairs1;
-    
-    uint32_t restart_idx = 0xFFFFFFFF;
-    
-    std::vector<plane> planes;
-    
-    for ( int y = 0; y < int(solid_.y()); ++y ) {
-        for ( size_t z = 0; z < solid_.z(); ++z ) {
-            for ( size_t x = 0; x < solid_.x(); ++x ) {
-                if ( solid_(x, y, z) ) {
-
-//                    const bool occ = util::occluded( light_pos, vec3i(x,y,z), solid_ );
-
-                    float energy = 1.0;
-
-
-                    if ( !solidc(x,y+1,z)) {
-                    
-                        
-                        planes.push_back( plane( plane::dir_zx_p, base_pos_, vec3i( x, y, z ), scale, energy));
-                        
-                        auto &verts = planes.back().verts();
-                        
-                        uint32_t first_idx = vecs0.size();
-                        if( restart0 ) {
-                            idx0.push_back(restart_idx);
-                            idx0.push_back(vecs0.size());
-                            vecs0.push_back(verts[1]);
-                            
-                            idx0.push_back(vecs0.size());
-                            vecs0.push_back(verts[0]);
-                            
-                            idx0.push_back(vecs0.size());
-                            vecs0.push_back(verts[2]);
-                            
-                            idx0.push_back(vecs0.size());
-                            vecs0.push_back(verts[3]);
-                            
-                            restart0 = false;
-                        } else {
-                            idx0.push_back(vecs0.size());
-                            vecs0.push_back(verts[2]);
-                            
-                            idx0.push_back(vecs0.size());
-                            vecs0.push_back(verts[3]);
-                        }
-                        idx_pairs0.emplace_back( first_idx, vecs0.size());
-                        
-                        //planes.push_back(std::move(p));
-                        
-                    } else {
-                        restart0 = true;
-                    }
-                    if ( y > 0 && !solidc(x,y-1,z)) {
-                        
-                        
-                        
-                        planes.push_back( plane( plane::dir_zx_n, base_pos_, vec3i( x, y, z ), scale, energy));
-                        
-                        auto &verts = planes.back().verts();
-                        uint32_t first_idx = vecs1.size();
-                        if( restart1 ) {
-                            idx1.push_back(restart_idx);
-                            idx1.push_back(vecs1.size());
-                            vecs1.push_back(verts[1]);
-                            
-                            idx1.push_back(vecs1.size());
-                            vecs1.push_back(verts[0]);
-                            
-                            idx1.push_back(vecs1.size());
-                            vecs1.push_back(verts[2]);
-                            
-                            idx1.push_back(vecs1.size());
-                            vecs1.push_back(verts[3]);
-                            
-                            restart1 = false;
-                        } else {
-                            idx1.push_back(vecs1.size());
-                            vecs1.push_back(verts[2]);
-                            
-                            idx1.push_back(vecs1.size());
-                            vecs1.push_back(verts[3]);
-                        }
-                        idx_pairs1.emplace_back( first_idx, vecs0.size());
-                        //planes.push_back(std::move(p));
-                    } else {
-                        restart1 = true;
-                        
-                    }
-                        
-
-
-                } else {
-                    restart0 = true;
-                    restart1 = true;
-                }
-            }
-        }
+    for( auto & s : atlases ) {
+        std::cout << "height: " << s.height() << "\n";
+        
+        bp.insert( &s );
     }
-//      for( size_t z = 0; z < height_.size(); ++z ) {
-//          for( size_t x = 0; x < height_[z].size(); ++x ) {
-//              planes_.push_back( plane( plane::dir_zx_n, base_pos, vec3i( x, 20, z ), 0.0));
-//          }
-//      }
 
-
-    std::cout << "planes: " << planes_.size() << "\n";
-    planes_.shrink_to_fit();
-
-
-
+   auto mapping = bp.realize();
+   visualize( bin_width, bin_height, mapping );
 }
-#endif
+
+
 void light_utils::render_light(std::vector< vec3f >* emitptr, const scene_static& scene, const vec3f& light_pos, const vec3f& light_color) {
     assert( emitptr != nullptr );
 

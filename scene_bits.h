@@ -123,6 +123,24 @@ public:
         dir_zx_n,
     };
 
+    static const char *dir_to_string( dir_type d ) {
+        switch( d ) {
+        case dir_xy_p:
+            return "dir_xy_p";
+        case dir_xy_n:
+            return "dir_xy_n";
+        case dir_yz_p:
+            return "dir_yz_p";
+        case dir_yz_n:
+            return "dir_yz_n";
+        case dir_zx_p:
+            return "dir_zx_p";
+        case dir_zx_n:
+            return "dir_zx_n";
+        default:
+            return "default";
+        };
+    }
 
     bool normal_cull( const plane &other ) const {
 //      return (dir_ == dir_xy_p && other.dir_ == dir_xy_n) ||
@@ -278,6 +296,7 @@ public:
     const std::vector<idx_pair> &strip_idx_pairs() const {
         return strip_idx_pairs_;
     }
+    
     
 private:
     std::vector<plane> planes_;
