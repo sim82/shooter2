@@ -20,10 +20,10 @@
 #include <atomic>
 #include <boost/dynamic_bitset.hpp>
 #include "cycle.h"
-
+#if 0
 class spinlock_mutex {
 public:
-    spinlock_mutex() : flag_(ATOMIC_FLAG_INIT) {}
+	spinlock_mutex() : flag_(ATOMIC_FLAG_INIT) {}
     
     void lock() {
         while( flag_.test_and_set( std::memory_order_acquire ));
@@ -36,7 +36,7 @@ public:
 private:
     std::atomic_flag flag_;
 };
-
+#endif
 typedef CL_Vec3i vec3i;
 typedef CL_Vec3f vec3f;
 
@@ -56,6 +56,7 @@ struct col3f_sse {
         b = other.b;
         x = 0;
         return *this;
+		
     }
 
     col3f_sse() {}
@@ -74,13 +75,13 @@ typename vec_t::datatype dist_sqr( const vec_t &v1, const vec_t &v2 ) {
 }
 
 
-
+#if 0
 template<typename T, typename ...Args>
 std::unique_ptr<T> make_unique( Args&& ...args )
 {
     return std::unique_ptr<T>( new T( std::forward<Args>(args)... ) );
 }
-
+#endif
 template<typename Block>
 class bitset_hash_iterator : public std::iterator<std::output_iterator_tag,void,void,void,void> {
     Block &hash;

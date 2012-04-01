@@ -50,8 +50,9 @@ ENDMACRO(ClanLib_ERR)
 
 MACRO(ClanLib_FIND_COMPONENT COMPONENT)
   ClanLib_MSG("Checking for Clan${COMPONENT}")
-  FIND_LIBRARY(ClanLib_${COMPONENT}_LIBRARY clan${ClanLib_MAJOR_VERSION}${ClanLib_MINOR_VERSION}${COMPONENT}
-    ${CLANLIB_ROOT_DIR}/lib /lib /usr/lib /usr/local/lib
+  #FIND_LIBRARY(ClanLib_${COMPONENT}_LIBRARY clan${ClanLib_MAJOR_VERSION}${ClanLib_MINOR_VERSION}${COMPONENT}
+  FIND_LIBRARY(ClanLib_${COMPONENT}_LIBRARY clan${COMPONENT}-static-mt PATHS
+    ${CLANLIB_ROOT_DIR}/lib ${CLANLIB_ROOT_DIR}/lib/x64 /lib /usr/lib /usr/local/lib
     DOC "Library name for clan${COMPONENT}.")
   IF(ClanLib_${COMPONENT}_LIBRARY)
     SET(ClanLib_${COMPONENT}_FOUND TRUE)

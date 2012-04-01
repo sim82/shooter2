@@ -1,5 +1,7 @@
 #ifndef __cl_error_codes_h
 #define __cl_error_codes_h
+
+#ifdef TEST_OPENCL
 #include <CL/cl.h>
 
 const char *cl_str_error( cl_int err ) {
@@ -59,5 +61,5 @@ const char *cl_str_error( cl_int err ) {
     }
             
 }
-
+#endif
 #endif

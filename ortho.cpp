@@ -12,24 +12,68 @@
  *  for more details.
  */
 
+#define NOGDICAPMASKS     
+#define NOVIRTUALKEYCODES 
+#define NOWINMESSAGES     
+#define NOWINSTYLES       
+#define NOSYSMETRICS      
+#define NOMENUS           
+#define NOICONS           
+#define NOKEYSTATES       
+#define NOSYSCOMMANDS     
+#define NORASTEROPS       
+#define NOSHOWWINDOW      
+#define OEMRESOURCE       
+#define NOATOM            
+#define NOCLIPBOARD       
+#define NOCOLOR           
+#define NOCTLMGR          
+#define NODRAWTEXT        
+#define NOGDI             
+#define NOKERNEL          
+#define NOUSER            
+#define NONLS             
+#define NOMB              
+#define NOMEMMGR          
+#define NOMETAFILE        
+#define NOMINMAX          
+#define NOMSG             
+#define NOOPENFILE        
+#define NOSCROLL          
+#define NOSERVICE         
+#define NOSOUND           
+#define NOTEXTMETRIC      
+#define NOWH              
+#define NOWINOFFSETS      
+#define NOCOMM            
+#define NOKANJI           
+#define NOHELP            
+#define NOPROFILER        
+#define NODEFERWINDOWPOS  
+#define NOMCX 
+#define WIN32_LEAN_AND_MEAN
+
+#include <windows.h>
 #include <ClanLib/display.h>
 #include <ClanLib/application.h>
 #include <ClanLib/gl.h>
 #include <ClanLib/core.h>
 #include <GL/gl.h>
-#include <GL/glx.h>
-#include <CL/cl_gl.h>
 
 
 
 #ifdef TEST_OPENCL
+#include <GL/glx.h>
+#include <CL/cl_gl.h>
+
+
 #define __CL_ENABLE_EXCEPTIONS
 #include "cl.hpp"
 #endif
 
 #include "cycle.h"
 #include "cl_error_codes.h"
-#include <execinfo.h>
+//#include <execinfo.h>
 #include <fstream>
 #include <array>
 #include <algorithm>
