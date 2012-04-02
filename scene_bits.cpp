@@ -632,10 +632,12 @@ public:
     
     
     
-    void alloc( vec2i p ) {
+    void alloc( vec2i p, size_t plane ) {
         
         assert( !closed_ );
+        assert( plane != size_t(-1) );
         alloc_tex_.push_back(p);
+        alloc_tex_plane_.push_back(plane);
     }
     
     void close() {
@@ -673,14 +675,45 @@ public:
         return max_size_.y;
     }
     
-    bool is_alloc( vec2i v ) const {
+    size_t get_plane( vec2i v ) const {
         // yes I know, this makes me look like a blithering idiot...
-        return std::find( alloc_tex_.begin(), alloc_tex_.end(), v ) != alloc_tex_.end();
+        auto it = std::find( alloc_tex_.begin(), alloc_tex_.end(), v );
+        
+        if( it != alloc_tex_.end() ) {
+            size_t idx = std::distance( alloc_tex_.begin(), it );
+            assert( idx < alloc_tex_plane_.size() );
+            return alloc_tex_plane_[idx];
+        } else {
+            return size_t(-1);
+        }
+            
+    }
+    
+    bool is_alloc( vec2i v ) const {
+        
+        //return std::find( alloc_tex_.begin(), alloc_tex_.end(), v ) != alloc_tex_.end();
+        
+        return get_plane( v ) != size_t(-1);
+    }
+    
+    size_t num_alloc() const {
+        return alloc_tex_.size();
+    }
+    
+    const vec2i &texel_at( size_t idx ) const {
+        assert( idx < alloc_tex_.size() );
+        return alloc_tex_[idx];
+    }
+    
+    size_t texel_plane_at( size_t idx ) const {
+        assert( idx < alloc_tex_plane_.size() );
+        return alloc_tex_plane_[idx];
     }
 private:
     
     
     std::vector<vec2i> alloc_tex_;
+    std::vector<size_t> alloc_tex_plane_;
     plane::dir_type dir_;
     int last_dim_;
     mutable bool closed_;
@@ -1036,13 +1069,13 @@ static void write_rgb_pnm( std::ostream &os, int width, int height, const std::v
     
 }
 
-static void fill_rect( int x, int y, int width, int height, std::vector<vec3i> *bm, std::function<size_t (int,int)> coord, vec3i color ) {
-    for( int i = y; i < y + height; ++i ) {
-        for( int j = x; j < x + width; ++j ) {
-            (*bm)[coord(j, i)] = color;
-        }
-    }
-}
+// static void fill_rect( int x, int y, int width, int height, std::vector<vec3i> *bm, std::function<size_t (int,int)> coord, vec3i color ) {
+//     for( int i = y; i < y + height; ++i ) {
+//         for( int j = x; j < x + width; ++j ) {
+//             (*bm)[coord(j, i)] = color;
+//         }
+//     }
+// }
 
 static void blit_slice( int x, int y, const lightmap_atlas_slice *slice, std::vector<vec3i> *bm, std::function<size_t (int,int)> coord, vec3i color ) {
     for( int i = y; i < y + slice->height(); ++i ) {
@@ -1099,6 +1132,43 @@ static void visualize( int width, int height, const std::vector< binpacker::bin_
     
 }
 
+// TODO: review: make this smaller e.g. char*small*small should be enough
+typedef std::tuple<size_t,int,int> texel_address;
+
+std::vector<texel_address> plane_to_texel_map( const std::vector< binpacker::bin_mapping > &mapping ) {
+    std::vector<texel_address> out;
+    
+    for( const auto &bm : mapping ) {
+        size_t bin;
+        int y;
+        int x;
+        const lightmap_atlas_slice *slice;
+
+        std::tie(bin, y, x, slice) = bm;
+        
+        const size_t num_alloc = slice->num_alloc();
+        
+        for( size_t i = 0; i < num_alloc; ++i ) {
+            vec2i pos = slice->texel_at(i);
+            size_t plane = slice->texel_plane_at(i);
+            
+            
+//             std::cout << "plane: " << plane << "\n";
+            if( out.size() <= plane ) {
+                out.resize( plane + 1, std::make_tuple<size_t,int,int>(-1,-1,-1));
+            }
+            
+            out.at(plane) = std::make_tuple(bin,x + pos.x, y + pos.y );
+        }
+    }
+    
+    std::for_each( out.begin(), out.end(), [] (const texel_address &t ) {
+        if( std::get<0>(t) == size_t(-1) ) {
+            std::cout << "meeeeep: bad texel\n";
+        }
+    } );
+    return out;
+}
 
 void scene_static::init_strips() {
 
@@ -1133,7 +1203,7 @@ void scene_static::init_strips() {
                 }
                 
                 
-                atlas.alloc(it.pos2d());
+                atlas.alloc(it.pos2d(), planes_.size());
                 
                 
                 planes_.push_back( plane( dir, base_pos_, pos, scale, 1.0));
@@ -1206,13 +1276,15 @@ void scene_static::init_strips() {
     });
     
     for( auto & s : atlases ) {
-        std::cout << "height: " << s.height() << "\n";
+//         std::cout << "height: " << s.height() << "\n";
         
         bp.insert( &s );
     }
 
    auto mapping = bp.realize();
    visualize( bin_width, bin_height, mapping );
+   
+   auto ptm = plane_to_texel_map( mapping );
 }
 
 
