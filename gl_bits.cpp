@@ -6,61 +6,69 @@
 
 
 
-vbo_builder_tristrip::vbo_builder_tristrip( const scene_static &scene ) 
- : scene_static_(&scene),
-   num_planes_(scene.planes().size())
-{
+vbo_builder_tristrip::vbo_builder_tristrip( const scene_static::tristrip &tristrip ) 
+ : tristrip_(&tristrip)
+ {
     glGenBuffers( 2, buffers_ ); check_gl_error;
     glGenBuffers( 1, &index_buffer_ ); check_gl_error;
     
     assert( sizeof(vec3f) == 3 * sizeof( GLfloat ));
+    auto &ts = *tristrip_;
+    const size_t vertex_size = ts.vecs().size() * 3 * sizeof(GLfloat);
+    const size_t color_size = ts.vecs().size() * 4 * sizeof(GLubyte);
     
-    const size_t vertex_size = scene.strip_vecs().size() * 3 * sizeof(GLfloat);
-    const size_t color_size = scene.strip_vecs().size() * 4 * sizeof(GLubyte);
-    
-    index_num_ = scene.strip_idx().size();
+    index_num_ = ts.idx().size();
     const size_t index_size = index_num_ * sizeof( GLuint );
     
     glGenBuffers( 2, buffers_ ); check_gl_error;
     glGenBuffers( 1, &index_buffer_ ); check_gl_error;
     
     glBindBuffer( GL_ARRAY_BUFFER, buffers_[0] ); check_gl_error;
-    glBufferData( GL_ARRAY_BUFFER, vertex_size, scene.strip_vecs().data(), GL_STATIC_DRAW ); check_gl_error;
+    glBufferData( GL_ARRAY_BUFFER, vertex_size, ts.vecs().data(), GL_STATIC_DRAW ); check_gl_error;
 //     glBufferData( GL_ARRAY_BUFFER, -1, scene.strip_vecs().data(), GL_STATIC_DRAW ); check_gl_error;
     
     glBindBuffer( GL_ARRAY_BUFFER, buffers_[1] ); check_gl_error;
     glBufferData( GL_ARRAY_BUFFER, color_size, 0, GL_DYNAMIC_DRAW ); check_gl_error; check_gl_error;
+    {
+        glBindBuffer( GL_ARRAY_BUFFER, buffers_[1] );
+        GLubyte *b_base = (GLubyte*) glMapBuffer( GL_ARRAY_BUFFER, GL_WRITE_ONLY ); check_gl_error;
+        std::fill( b_base, b_base + tristrip_->vecs().size() * 4 * sizeof(GLubyte), 255 );
+        glUnmapBuffer( GL_ARRAY_BUFFER );
+        
+    }
     
 //     glPrimitiveRestartIndex( scene_static::restart_idx ); check_gl_error;
-    assert(scene.strip_idx().size() * sizeof(GLuint) == index_size );
+    assert(ts.idx().size() * sizeof(GLuint) == index_size );
     glBindBuffer( GL_ELEMENT_ARRAY_BUFFER, index_buffer_ ); check_gl_error;
-    glBufferData( GL_ELEMENT_ARRAY_BUFFER, index_size, scene.strip_idx().data(), GL_STATIC_DRAW ); check_gl_error; 
+    glBufferData( GL_ELEMENT_ARRAY_BUFFER, index_size, ts.idx().data(), GL_STATIC_DRAW ); check_gl_error; 
     
     
 }
 void vbo_builder_tristrip::update_color_vec3fptr(const vec3f * const first, const vec3f * const last) {
-    assert( scene_static_ != nullptr );
+#if 0
+    assert( tristrip_ != nullptr );
     //assert( 0 );
-    assert( std::distance( first, last ) == ptrdiff_t(num_planes_) );
+  //  assert( std::distance( first, last ) == ptrdiff_t(tristrip_->idx_pairs().size()) );
     
     glBindBuffer( GL_ARRAY_BUFFER, buffers_[1] );
     GLubyte *b_base = (GLubyte*) glMapBuffer( GL_ARRAY_BUFFER, GL_WRITE_ONLY ); check_gl_error;
-//     std::fill( b_base, b_base + 1000, 255 );
+    std::fill( b_base, b_base + tristrip_->vecs().size() * 4 * sizeof(GLubyte), 255 );
 //     glUnmapBuffer( GL_ARRAY_BUFFER );
 //     return;
     
     assert( b_base != nullptr );
 
     //b += 4 * 3 * num_planes_;
-
+#if 0
     const vec3f *cur = first;
     
-    const auto &idx_pairs = scene_static_->strip_idx_pairs();
-    assert( idx_pairs.size() == num_planes_ );
+    auto &ts = *tristrip_;
+    const auto &idx_pairs = ts.idx_pairs();
+    //assert( idx_pairs.size() == num_planes_ );
     
     for( ; cur != last; ++cur ) {
         auto idx = std::distance(first, cur);
-        assert( idx < ptrdiff_t(scene_static_->planes().size()) );
+        assert( idx < ptrdiff_t(idx_pairs.size()) );
         
         auto pair = idx_pairs[idx];
         
@@ -74,10 +82,11 @@ void vbo_builder_tristrip::update_color_vec3fptr(const vec3f * const first, cons
         }
 
     }
-
+#endif
 
 
     glUnmapBuffer( GL_ARRAY_BUFFER );
+#endif
 }
 
 void vbo_builder_tristrip::draw_arrays() {
@@ -87,6 +96,8 @@ void vbo_builder_tristrip::draw_arrays() {
     glBindBuffer( GL_ARRAY_BUFFER, buffers_[1] ); check_gl_error;
     glColorPointer(4, GL_UNSIGNED_BYTE, 0, (GLvoid*)((char*)NULL));
 
+    // TODO: continue here: setup tex coord buffer
+    
 //         glBindBuffer(GL_ARRAY_BUFFER, buffer_);
     glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, index_buffer_); check_gl_error;
     glEnableClientState(GL_VERTEX_ARRAY);
@@ -98,7 +109,7 @@ void vbo_builder_tristrip::draw_arrays() {
 }
 
 
-
+#if 0
 vbo_builder::vbo_builder(size_t num_planes) : num_planes_(num_planes) {
     //GLuint b;
     glGenBuffers( 2, buffers_ );
@@ -142,6 +153,10 @@ void vbo_builder::draw_arrays() {
 // This is the actual draw command
     glDrawElements(GL_QUADS, num_planes_ * 4, GL_UNSIGNED_INT, (GLvoid*)((char*)NULL));
 }
+
+#endif
+
+
 std::string gl_error_exception::err_str(GLenum err, const char* file, int line) throw() {
     try {
         std::stringstream ss;

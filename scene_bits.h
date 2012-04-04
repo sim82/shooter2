@@ -261,8 +261,47 @@ private:
 
 class scene_static {
 public:
+    // TODO: review: make this smaller e.g. char*small*small should be enough
+    typedef std::tuple<size_t,int,int> texel_address;
+    
     typedef std::pair<uint32_t,uint32_t> idx_pair;
-    const static uint32_t restart_idx;// = 0xFFFFFFFF;
+    class tristrip {
+    public:
+        const std::vector<vec3f> &vecs() const {
+            return strip_vecs_;
+        }
+        const std::vector<uint32_t> &idx() const {
+            return strip_idx_;
+        }
+        
+        const std::vector<idx_pair> &idx_pairs() const {
+            return strip_idx_pairs_;
+        }
+    
+    
+        std::vector<vec3f> &vecs() {
+            return strip_vecs_;
+        }
+        std::vector<uint32_t> &idx() {
+            return strip_idx_;
+        }
+        
+        std::vector<idx_pair> &idx_pairs() {
+            return strip_idx_pairs_;
+        }
+    
+    private:
+        std::vector<vec3f> strip_vecs_;
+        std::vector<uint32_t> strip_idx_;
+    
+    
+        std::vector<idx_pair> strip_idx_pairs_;
+        
+    };
+    
+    
+    
+    //const static uint32_t restart_idx;// = 0xFFFFFFFF;
     
     scene_static( const vec3f &base_pos ) : base_pos_(base_pos) {}
     scene_static() {}
@@ -272,6 +311,8 @@ public:
         
     void init_planes();
     void init_strips();
+    
+    void init_binmaps();
     
     const std::vector<plane> &planes() const {
         return planes_;
@@ -285,7 +326,10 @@ public:
         
         return solid_.hash();
     }
-
+    const tristrip &tristrip_at( size_t i ) const {
+        return tristrips_.at(i);
+    }
+#if 0
     const std::vector<vec3f> &strip_vecs() const {
         return strip_vecs_;
     }
@@ -296,18 +340,33 @@ public:
     const std::vector<idx_pair> &strip_idx_pairs() const {
         return strip_idx_pairs_;
     }
+#endif
+
+
+    const std::vector<std::vector<CL_Vec3ub>> &bin_maps() const {
+        return bin_maps_;
+    }
     
+    const std::vector<texel_address> &plane_texel() const {
+        return plane_texel_;
+    }
     
 private:
     std::vector<plane> planes_;
     bitmap3d solid_;
     vec3f base_pos_;
     
+#if 0
     std::vector<vec3f> strip_vecs_;
     std::vector<uint32_t> strip_idx_;
     
     
     std::vector<idx_pair> strip_idx_pairs_;
+#endif
+    std::vector<tristrip> tristrips_;
+    
+    std::vector<std::vector<CL_Vec3ub>> bin_maps_;
+    std::vector<texel_address> plane_texel_;
 //     
     
     

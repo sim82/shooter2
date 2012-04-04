@@ -20,7 +20,7 @@
 #include "misc_utils.h"
 #include "scene_bits.h"
 
-const uint32_t scene_static::restart_idx = 0x1FFFFFFF;
+// const uint32_t scene_static::restart_idx = 0x1FFFFFFF;
 
 bool util::occluded2(vec3i p0, vec3i p1, const bitmap3d& solid) {
     // 3d bresenham, ripped from http://www.cobrabytes.com/index.php?topic=1150.0
@@ -1051,14 +1051,14 @@ const static std::array<vec3f, 4>reorder_strip( const std::array<vec3f, 4> &in, 
     
 }
 
-static void write_rgb_pnm( std::ostream &os, int width, int height, const std::vector<vec3i> &bm, std::function<size_t (int,int)> coord ) {
+static void write_rgb_pnm( std::ostream &os, int width, int height, const std::vector<CL_Vec3ub> &bm, std::function<size_t (int,int)> coord ) {
     os << "P3\n";
     os << width << " " << height << "\n";
     os << 255 << "\n";
     
     for( int i = 0; i < height; ++i ) {
         for( int j = 0; j < width; ++j ) {
-            vec3i col = bm[coord(j, i)];
+            auto col = bm[coord(j, i)];
             
             os << col.r << " " << col.g << " " << col.b << " ";
             
@@ -1077,7 +1077,7 @@ static void write_rgb_pnm( std::ostream &os, int width, int height, const std::v
 //     }
 // }
 
-static void blit_slice( int x, int y, const lightmap_atlas_slice *slice, std::vector<vec3i> *bm, std::function<size_t (int,int)> coord, vec3i color ) {
+static void blit_slice( int x, int y, const lightmap_atlas_slice *slice, std::vector<CL_Vec3ub> *bm, std::function<size_t (int,int)> coord, CL_Vec3ub color ) {
     for( int i = y; i < y + slice->height(); ++i ) {
         for( int j = x; j < x + slice->width(); ++j ) {
             
@@ -1089,12 +1089,16 @@ static void blit_slice( int x, int y, const lightmap_atlas_slice *slice, std::ve
 }
 
 
-static void visualize( int width, int height, const std::vector< binpacker::bin_mapping > &mapping) {
+static std::vector<std::vector<CL_Vec3ub>> visualize( int width, int height, const std::vector< binpacker::bin_mapping > &mapping) {
     
     auto coord = [=]( int x, int y ) { assert( x >= 0 && x < width ); assert( y >= 0 && y < height ); return x + y * width; };
-    std::vector<std::vector<vec3i>> binmaps;
+   
+    
+    std::vector<std::vector<CL_Vec3ub>> binmaps;
     
     vec3i next_col( 128, 128, 128 );
+    
+    
     
     for( const auto &bm : mapping ) {
         size_t bin;
@@ -1107,7 +1111,7 @@ static void visualize( int width, int height, const std::vector< binpacker::bin_
         std::cout << bin << " " << y << " " << x << ": " << slice << "\n";
         
         while( bin >= binmaps.size() ) {
-            binmaps.emplace_back( width * height, vec3i(0,0,0));
+            binmaps.emplace_back( width * height, CL_Vec3ub(0,0,0));
         }
         
         
@@ -1129,14 +1133,17 @@ static void visualize( int width, int height, const std::vector< binpacker::bin_
         write_rgb_pnm(os, width, height, binmaps[i], coord);
         
     }
-    
+
+    return binmaps;
 }
 
-// TODO: review: make this smaller e.g. char*small*small should be enough
-typedef std::tuple<size_t,int,int> texel_address;
 
-std::vector<texel_address> plane_to_texel_map( const std::vector< binpacker::bin_mapping > &mapping ) {
-    std::vector<texel_address> out;
+
+
+
+
+std::vector<scene_static::texel_address> plane_to_texel_map( const std::vector< binpacker::bin_mapping > &mapping ) {
+    std::vector<scene_static::texel_address> out;
     
     for( const auto &bm : mapping ) {
         size_t bin;
@@ -1162,7 +1169,7 @@ std::vector<texel_address> plane_to_texel_map( const std::vector< binpacker::bin
         }
     }
     
-    std::for_each( out.begin(), out.end(), [] (const texel_address &t ) {
+    std::for_each( out.begin(), out.end(), [] (const scene_static::texel_address &t ) {
         if( std::get<0>(t) == size_t(-1) ) {
             std::cout << "meeeeep: bad texel\n";
         }
@@ -1170,20 +1177,13 @@ std::vector<texel_address> plane_to_texel_map( const std::vector< binpacker::bin
     return out;
 }
 
-void scene_static::init_strips() {
-
-   
+void scene_static::init_binmaps() {
+    // first pass: assign planes to lighmap bins
     const auto &solidc = solid_;
-
-    vec3i light_pos( 10, 10, 10 );
-
-    int pump_factor_ = 2;
-    float scale = 1.0 / pump_factor_;
-
     std::vector<lightmap_atlas_slice> atlases;
+
+    size_t plane_idx = 0;
     
-    
-    bool restart = false;
     for( plane::dir_type dir : {plane::dir_zx_p, plane::dir_zx_n, plane::dir_yz_p, plane::dir_yz_n, plane::dir_xy_p, plane::dir_xy_n} ) {
 //     for( auto dir : {plane::dir_zx_n, plane::dir_zx_n} ) {
         face_iterator it(solidc, dir);
@@ -1203,13 +1203,83 @@ void scene_static::init_strips() {
                 }
                 
                 
-                atlas.alloc(it.pos2d(), planes_.size());
+                atlas.alloc(it.pos2d(), plane_idx);
+                ++plane_idx;
+    //            planes_.push_back( plane( dir, base_pos_, pos, scale, 1.0));
+            }
+            
+        } while( !it.inc() );
+        
+    }
+
+    
+    
+    // close all altlas strips, so that the remaining stuff can be done with const refs/ptrs.
+    std::for_each( atlases.begin(), atlases.end(), [](lightmap_atlas_slice &s) {s.close();});
+    
+    const int bin_width = 256;
+    const int bin_height = bin_width;
+    
+    binpacker bp( vec2i( bin_width, bin_height ) );
+    std::sort( atlases.begin(), atlases.end(), [] ( const lightmap_atlas_slice &s1, const lightmap_atlas_slice &s2 ) {
+        return s1.height() > s2.height();
+    });
+    
+    for( auto & s : atlases ) {
+//         std::cout << "height: " << s.height() << "\n";
+        
+        bp.insert( &s );
+    }
+
+   auto mapping = bp.realize();
+   bin_maps_ = visualize( bin_width, bin_height, mapping );
+   
+   plane_texel_ = plane_to_texel_map( mapping );
+}
+
+
+
+void scene_static::init_strips() {
+
+   
+    const auto &solidc = solid_;
+
+    vec3i light_pos( 10, 10, 10 );
+
+    int pump_factor_ = 2;
+    float scale = 1.0 / pump_factor_;
+    
+    //tristrips_.resize(1);
+    bool restart = false;
+    for( plane::dir_type dir : {plane::dir_zx_p, plane::dir_zx_n, plane::dir_yz_p, plane::dir_yz_n, plane::dir_xy_p, plane::dir_xy_n} ) {
+//     for( auto dir : {plane::dir_zx_n, plane::dir_zx_n} ) {
+        face_iterator it(solidc, dir);
+        
+        do {
+            
+            if( it.is_face() ) {
+                vec3i pos = it.pos();
                 
+                if( dir == plane::dir_zx_n && pos.y == 0 ) {
+                    continue; // skip faces on the underside of the level
+                }
+                
+                auto texel_addr = plane_texel_.at(planes_.size()); // current size of planes_ == plane index (keep it like that!)
+                size_t lightmap_index = std::get<0>(texel_addr);
                 
                 planes_.push_back( plane( dir, base_pos_, pos, scale, 1.0));
                 
                 auto &qverts = planes_.back().verts();
-                        
+
+                
+                if( tristrips_.size() <= lightmap_index ) {
+                    tristrips_.resize( lightmap_index + 1 );
+                }
+                auto &ts = tristrips_.at(lightmap_index);
+                auto &strip_idx_ = ts.idx();
+                auto &strip_vecs_ = ts.vecs();
+                auto &strip_idx_pairs_ = ts.idx_pairs();
+                
                 auto verts = reorder_strip(qverts, dir);
                 uint32_t first_idx = strip_vecs_.size();
                 if( restart ) {
@@ -1221,7 +1291,7 @@ void scene_static::init_strips() {
                     } else {
                         strip_idx_.push_back(strip_vecs_.size());
                         
-                        vec3f t = strip_vecs().back();
+                        vec3f t = strip_vecs_.back();
                         strip_vecs_.push_back(t);
                         strip_idx_.push_back(strip_vecs_.size());
                         strip_vecs_.push_back(verts[0]);
@@ -1260,31 +1330,10 @@ void scene_static::init_strips() {
 
     
     std::cout << "planes (striped): " << planes_.size() << "\n";
-    std::cout << "vecs: " << strip_vecs_.size() << "\n";
+    std::cout << "vecs: " << tristrips_.at(0).vecs().size() << "\n";
     planes_.shrink_to_fit();
 
 
-    // close all altlas strips, so that the remaining stuff can be done with const refs/ptrs.
-    std::for_each( atlases.begin(), atlases.end(), [](lightmap_atlas_slice &s) {s.close();});
-    
-    const int bin_width = 256;
-    const int bin_height = bin_width;
-    
-    binpacker bp( vec2i( bin_width, bin_height ) );
-    std::sort( atlases.begin(), atlases.end(), [] ( const lightmap_atlas_slice &s1, const lightmap_atlas_slice &s2 ) {
-        return s1.height() > s2.height();
-    });
-    
-    for( auto & s : atlases ) {
-//         std::cout << "height: " << s.height() << "\n";
-        
-        bp.insert( &s );
-    }
-
-   auto mapping = bp.realize();
-   visualize( bin_width, bin_height, mapping );
-   
-   auto ptm = plane_to_texel_map( mapping );
 }
 
 
@@ -1532,4 +1581,3 @@ void scene_static::init_solid_from_crystal(std::istream& is, size_t pump) {
 
     init_solid(crystal_bits::load_crystal(is, pump));
 }
-
