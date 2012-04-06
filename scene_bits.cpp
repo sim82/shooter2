@@ -15,6 +15,7 @@
 #include <fstream>
 #include <iomanip>
 #include <functional>
+#include <vector>
 #include <boost/numeric/ublas/matrix.hpp>
 #include <boost/numeric/ublas/matrix_proxy.hpp>
 #include "misc_utils.h"
@@ -477,15 +478,15 @@ public:
     face_iterator( const bitmap3d &bm, plane::dir_type dir ) 
     : 
     x_(0), y_(0), z_(0),
-    bitmap_(bm), dir_(dir), norm_( plane::normali(dir)), last_dim_changed_(false)
+    bitmap_(bm), dir_(dir), norm_( plane::normali(dir)), last_dim_changed_(false), second_dim_changed_(false)
     {
         
     }
     
     bool is_face() {
+        vec3i p = pos();
         
-        
-        return bitmap_(x_, y_, z_) && !bitmap_(x_ + norm_.x, y_ + norm_.y, z_ + norm_.z );
+        return bitmap_(p.x, p.y, p.z) && !bitmap_(p.x + norm_.x, p.y + norm_.y, p.z + norm_.z );
         
 //         switch( dir_ ) {
 //         case plane::dir_zx_p:
@@ -509,7 +510,9 @@ public:
         case plane::dir_zx_p:
         case plane::dir_zx_n:
             ++x_;
-            if( x_ >= bitmap_.x() ) {
+            
+            second_dim_changed_ = x_ >= bitmap_.x();
+            if( second_dim_changed_ ) {
                 ++z_;
                 x_ = 0;
             }
@@ -527,7 +530,9 @@ public:
         case plane::dir_yz_p:
         case plane::dir_yz_n:
             ++z_;
-            if( z_ >= bitmap_.z() ) {
+            
+            second_dim_changed_ = z_ >= bitmap_.z();
+            if( second_dim_changed_ ) {
                 ++y_;
                 z_ = 0;
             }
@@ -543,7 +548,9 @@ public:
         case plane::dir_xy_p:
         case plane::dir_xy_n:
             ++y_;
-            if( y_ >= bitmap_.y() ) {
+            
+            second_dim_changed_ = y_ >= bitmap_.y();
+            if( second_dim_changed_ ) {
                 ++x_;
                 y_ = 0;
             }
@@ -560,39 +567,68 @@ public:
         
     }
     vec3i pos() const {
-        return vec3i( x_, y_, z_ );
+        
+        switch( dir_ ) {
+            case plane::dir_zx_p:
+            case plane::dir_yz_p:
+            case plane::dir_xy_p:
+            default:
+                return vec3i( x_, y_, z_ );
+                
+            case plane::dir_zx_n:
+                return vec3i( bitmap_.x() - x_ - 1, y_, z_ );
+                
+            case plane::dir_yz_n:
+                return vec3i( x_, y_, bitmap_.z() - z_ - 1 );
+                
+            case plane::dir_xy_n:
+                return vec3i( x_, bitmap_.y() - y_ - 1, z_ );
+                
+                
+        }
+        
     }
     
     bool last_dim_changed() const {
         return last_dim_changed_;
     }
+    
+    bool second_dim_changed() const {
+        return second_dim_changed_;
+    }
+
+
     vec2i pos2d() const {
+        
+        vec3i p = pos();
         switch( dir_ ) {
         case plane::dir_zx_p:
         case plane::dir_zx_n:
-            return vec2i(z_,x_);
+            return vec2i(p.z,p.x);
         case plane::dir_yz_p:
         case plane::dir_yz_n:
-            return vec2i(y_,z_);
+            return vec2i(p.y,p.z);
         case plane::dir_xy_p:
         case plane::dir_xy_n:
         default: 
-            return vec2i(x_,y_);
+            return vec2i(p.x,p.y);
         }
     }
-    
+
+
     int last_dim_pos() const {
+        vec3i p = pos();
         switch( dir_ ) {
         case plane::dir_zx_p:
         case plane::dir_zx_n:
-            return y_;
+            return p.y;
         case plane::dir_yz_p:
         case plane::dir_yz_n:
-            return x_;
+            return p.x;
         case plane::dir_xy_p:
         case plane::dir_xy_n:
         default: 
-            return z_;
+            return p.z;
         }
     }
     
@@ -604,6 +640,7 @@ private:
     vec3i norm_;
     
     bool last_dim_changed_;
+    bool second_dim_changed_;
 };
 
 
@@ -656,7 +693,8 @@ public:
             });
             
             max_size_ = smax;
-
+            ++max_size_.x;
+            ++max_size_.y;
         }
         
         
@@ -1046,7 +1084,8 @@ const static std::array<vec3f, 4>reorder_strip( const std::array<vec3f, 4> &in, 
     case plane::dir_yz_n:
     case plane::dir_xy_n:
         //return std::array<vec3f, 4>{in[2], in[1], in[3], in[0]};
-        return std::array<vec3f, 4>{{in[3], in[0], in[2], in[1]}};
+        return std::array<vec3f, 4>{{in[1], in[2], in[0], in[3]}};
+    //    return std::array<vec3f, 4>{{in[0], in[3], in[1], in[2]}};
     };
     
 }
@@ -1060,7 +1099,7 @@ static void write_rgb_pnm( std::ostream &os, int width, int height, const std::v
         for( int j = 0; j < width; ++j ) {
             auto col = bm[coord(j, i)];
             
-            os << col.r << " " << col.g << " " << col.b << " ";
+            os << int(col.r) << " " << int(col.g) << " " << int(col.b) << " ";
             
         }
         
@@ -1091,7 +1130,10 @@ static void blit_slice( int x, int y, const lightmap_atlas_slice *slice, std::ve
 
 static std::vector<std::vector<CL_Vec3ub>> visualize( int width, int height, const std::vector< binpacker::bin_mapping > &mapping) {
     
-    auto coord = [=]( int x, int y ) { assert( x >= 0 && x < width ); assert( y >= 0 && y < height ); return x + y * width; };
+    auto coord = [=]( int x, int y ) { 
+        assert( x >= 0 && x < width ); assert( y >= 0 && y < height ); 
+        return x + y * width; 
+    };
    
     
     std::vector<std::vector<CL_Vec3ub>> binmaps;
@@ -1124,7 +1166,33 @@ static std::vector<std::vector<CL_Vec3ub>> visualize( int width, int height, con
         next_col.b = (next_col.b + 79) % 256;
     }
     
+    
+    
     for( size_t i = 0; i < binmaps.size(); ++i ) {
+#if 0
+        for( size_t y = 0; y < height; ++y ) {
+            for( size_t x = 0; x < width; ++x ) {
+                uint8_t cx = 0;
+                uint8_t cy = 0;
+                
+//                 if( x % 2 == 0 ) {
+//                     cx = x;//cx / 2;
+//                 }
+//                 
+//                 if( y % 2 == 0 ) {
+//                     cy = y; //cy / 2;
+//                 }
+                
+                if( y % 2 == 0 && x % 2 == 0 ) {
+                    cy = x;
+                    cx = y;
+                }
+                
+                binmaps[i][coord(x, y)] = CL_Vec3ub( cx, cy, 0 );
+            }
+        }
+#endif    
+        
         std::stringstream ss;
         ss << "bin_" << std::setw(4) << std::setfill('0') << i << ".pnm";
         
@@ -1134,6 +1202,8 @@ static std::vector<std::vector<CL_Vec3ub>> visualize( int width, int height, con
         
     }
 
+    
+    
     return binmaps;
 }
 
@@ -1198,9 +1268,9 @@ void scene_static::init_binmaps() {
             if( it.is_face() ) {
                 vec3i pos = it.pos();
                 
-                if( dir == plane::dir_zx_n && pos.y == 0 ) {
-                    continue; // skip faces on the underside of the level
-                }
+//                 if( dir == plane::dir_zx_n && pos.y == 0 ) {
+//                     continue; // skip faces on the underside of the level
+//                 }
                 
                 
                 atlas.alloc(it.pos2d(), plane_idx);
@@ -1237,11 +1307,17 @@ void scene_static::init_binmaps() {
    plane_texel_ = plane_to_texel_map( mapping );
 }
 
-
+std::string to_string( const vec3i &v ) {
+    std::stringstream ss;
+    ss << "(" << v.x << " " << v.y << " " << v.z << ")";
+    return ss.str();
+}
 
 void scene_static::init_strips() {
 
-   
+    const int bin_width = 256;
+    const int bin_height = bin_width;
+    
     const auto &solidc = solid_;
 
     vec3i light_pos( 10, 10, 10 );
@@ -1249,23 +1325,70 @@ void scene_static::init_strips() {
     int pump_factor_ = 2;
     float scale = 1.0 / pump_factor_;
     
+    
+    std::vector<size_t> share_back;
+    std::vector<size_t> share_front;
+    
     //tristrips_.resize(1);
     bool restart = false;
     for( plane::dir_type dir : {plane::dir_zx_p, plane::dir_zx_n, plane::dir_yz_p, plane::dir_yz_n, plane::dir_xy_p, plane::dir_xy_n} ) {
-//     for( auto dir : {plane::dir_zx_n, plane::dir_zx_n} ) {
+//      for( auto dir : {plane::dir_zx_n,plane::dir_yz_n,plane::dir_xy_n} ) {
         face_iterator it(solidc, dir);
-        
+        share_front.clear();
+        share_back.clear();
         do {
+            if( it.second_dim_changed() ) {
+                share_back.swap(share_front);
+                share_front.clear();
+//                 share_back.clear();
+            }
+            if( it.last_dim_changed() ) {
+                
+                share_front.clear();
+                share_back.clear();
+            }
             
             if( it.is_face() ) {
                 vec3i pos = it.pos();
+                size_t fcd = it.pos2d().y + 1;
+                size_t fcdm1 = fcd - 1;
                 
-                if( dir == plane::dir_zx_n && pos.y == 0 ) {
-                    continue; // skip faces on the underside of the level
+                vec2f texel_up( -1.0 / bin_height, 0.0 );
+                vec2f texel_left( 0.0, -1.0 / bin_height );
+                float off = 1.0;
+                switch( dir ) {
+                    case plane::dir_zx_n:
+                    case plane::dir_yz_n:
+                    case plane::dir_xy_n:
+
+                        fcdm1 = fcd + 1;
+                        texel_left *= -1;
+                        texel_up *= -1;
+                        off = 0.0;
+                        break;
+                    default:
+                    {}
                 }
                 
+//                 std::cout << "fcd: " << pos.x << " " << pos.y << " " << pos.z << ":" << fcd << "\n";
+                
+//                 if( dir == plane::dir_zx_n && pos.y == 0 ) {
+//                     continue; // skip faces on the underside of the level
+//                 }
+                
+                
                 auto texel_addr = plane_texel_.at(planes_.size()); // current size of planes_ == plane index (keep it like that!)
-                size_t lightmap_index = std::get<0>(texel_addr);
+                size_t lightmap_index;
+                vec2i texeli;
+                
+                std::tie(lightmap_index,texeli.x,texeli.y) = texel_addr;
+//                 std::cout << "texel: " << texel.x << " " << texel.y << "\n";
+                
+//                 const float off = 1.0;
+                
+                vec2f texel( (texeli.x + off) / float(bin_width), (texeli.y + off) / float(bin_height) );
+                
+                //size_t lightmap_index = std::get<0>(texel_addr);
                 
                 planes_.push_back( plane( dir, base_pos_, pos, scale, 1.0));
                 
@@ -1278,44 +1401,142 @@ void scene_static::init_strips() {
                 auto &ts = tristrips_.at(lightmap_index);
                 auto &strip_idx_ = ts.idx();
                 auto &strip_vecs_ = ts.vecs();
+                auto &strip_tex_ = ts.tex();
                 auto &strip_idx_pairs_ = ts.idx_pairs();
+                
+                
                 
                 auto verts = reorder_strip(qverts, dir);
                 uint32_t first_idx = strip_vecs_.size();
                 if( restart ) {
                     //strip_idx_.push_back(restart_idx);
+                    
+                    size_t shared = -1;
+                    
+                    if( fcdm1 < share_back.size() ) {
+                        shared = share_back[fcdm1];
+                    }
+                    
                     // output degenerated tris to jump to restart position
-                    if( true ) {
+                    if(false)
+                    {
                         strip_idx_.push_back(strip_vecs_.size()-1);
                         strip_idx_.push_back(strip_vecs_.size());
                     } else {
-                        strip_idx_.push_back(strip_vecs_.size());
-                        
-                        vec3f t = strip_vecs_.back();
-                        strip_vecs_.push_back(t);
+                        if( strip_idx_.size() > 0 ) {
+                            size_t last = strip_idx_.back();
+                            strip_idx_.push_back(last);
+//                             strip_idx_.push_back(strip_vecs_.size());
+                            
+                            if( shared == -1 ) {
+                                strip_idx_.push_back(strip_vecs_.size());
+                            } else {
+                                strip_idx_.push_back(shared);
+                            }
+                            
+                        }
+                    }
+                    
+                    
+                    
+                    if( shared == -1 ) {
                         strip_idx_.push_back(strip_vecs_.size());
                         strip_vecs_.push_back(verts[0]);
+                        strip_tex_.push_back(texel + texel_up + texel_left);// - vec2f( -0.0 / float(bin_width), 1.0 / float(bin_width)) /*- vec2f(0,(1.0/bin_height))*/);                            
+                    } else {
+                        strip_idx_.push_back(shared);
                     }
                     
                     strip_idx_.push_back(strip_vecs_.size());
-                    strip_vecs_.push_back(verts[0]);
                     
-                    strip_idx_.push_back(strip_vecs_.size());
+                    if( share_front.size() <= fcdm1) {
+                        share_front.resize( fcdm1 + 1, -1 );
+                    }
+                    share_front[fcdm1] = strip_vecs_.size();
+                    
+                    
+                    
                     strip_vecs_.push_back(verts[1]);
+                    strip_tex_.push_back(texel + texel_left );// - vec2f(-1.0 / bin_height, 1.0 / float(bin_width)));
                     
-                    strip_idx_.push_back(strip_vecs_.size());
-                    strip_vecs_.push_back(verts[2]);
-                    
-                    strip_idx_.push_back(strip_vecs_.size());
-                    strip_vecs_.push_back(verts[3]);
-                    
+//                     strip_idx_.push_back(strip_vecs_.size());
+//                     strip_vecs_.push_back(verts[0]);
+//                     strip_tex_.push_back(texel );
+//                     
+//                     
+//                     strip_idx_.push_back(strip_vecs_.size());
+//                     strip_vecs_.push_back(verts[1]);
+//                     strip_tex_.push_back(texel );
                     restart = false;
-                } else {
+                    
+                }
+//                     size_t shared = -1;
+//                     
+//                     if( fcd < share_back.size() ) {
+//                         shared = share_back[fcd];
+//                     }
+//                     
+//                     if( shared == -1 ) {
+//                         strip_idx_.push_back(strip_vecs_.size());
+//                         strip_vecs_.push_back(verts[2]);
+//                         strip_tex_.push_back(texel /*- vec2f(0,(1.0/bin_height))*/);                            
+//                     } else {
+//                         strip_idx_.push_back(shared);
+//                         std::cout << "shared using: " << to_string(strip_vecs_[shared]) << " " << to_string(verts[2]) << "\n";
+//                     }
+//                     
+//                     
+//                     
+//                     strip_idx_.push_back(strip_vecs_.size());
+//                     if( share_front.size() <= fcd ) {
+//                         share_front.resize( fcd + 1, -1 );
+//                     }
+//                     share_front[fcd] = strip_vecs_.size();
+//                     
+//                     
+//                     strip_vecs_.push_back(verts[3]);
+//                     strip_tex_.push_back(texel);
+//                     
+//                     
+//                     
+//                     
+//                     
+//                     
+//                    
+//                 } else
+                {
+                    
+                    
+                    size_t shared = -1;
+                    
+                    if( fcd < share_back.size() ) {
+                        shared = share_back[fcd];
+                    }
+                    
+                    if( shared == -1 ) {
+                        strip_idx_.push_back(strip_vecs_.size());
+                        strip_vecs_.push_back(verts[2]);
+                        strip_tex_.push_back(texel + texel_up/*- vec2f(0,(1.0/bin_height))*/);                            
+                    } else {
+                        strip_idx_.push_back(shared);
+                    }
+                    
                     strip_idx_.push_back(strip_vecs_.size());
-                    strip_vecs_.push_back(verts[2]);
-                            
-                    strip_idx_.push_back(strip_vecs_.size());
+                    
+                    if( share_front.size() <= fcd ) {
+                        share_front.resize( fcd + 1, -1 );
+                    }
+                    share_front[fcd] = strip_vecs_.size();
+                    
+                    
+                    
                     strip_vecs_.push_back(verts[3]);
+                    strip_tex_.push_back(texel);
+                    
+                    
+                    
+                    
+                    
                 }
                 strip_idx_pairs_.emplace_back( first_idx, strip_vecs_.size());
                 

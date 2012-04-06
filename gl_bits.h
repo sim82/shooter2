@@ -76,6 +76,8 @@ public:
     
     void update_tex_coords( const std::vector<scene_static::texel_address> &texls ) {
       //  assert( texls.size() == num_planes_ );
+      
+//       auto &p = tristrip_->idx_pairs();
     }
     
     void draw_arrays() ;
@@ -87,7 +89,8 @@ private:
     
     size_t color_size;
     
-    GLuint buffers_[2];
+    
+    GLuint buffers_[3];
     GLuint index_buffer_;
     
     //size_t num_planes_;
@@ -180,29 +183,70 @@ public:
     gl_texture &operator=( gl_texture && ) = default;
     
     gl_texture() {
-        glGenTextures( 1, &tex_image_ );
+        glGenTextures( 1, &tex_image_ ); check_gl_error;
         
         // select our current texture
-        glBindTexture( GL_TEXTURE_2D, tex_image_ );
+        glBindTexture( GL_TEXTURE_2D, tex_image_ ); check_gl_error;
 
         
-        glTexEnvf( GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_MODULATE );
+        glTexEnvf( GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_MODULATE ); check_gl_error;
         
-        glTexParameterf( GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST );
+        glTexParameterf( GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST ); check_gl_error;
         
-        glTexParameterf( GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR );
-
+        glTexParameterf( GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR ); check_gl_error;
+//         glTexParameterf( GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST ); check_gl_error;
+        
         // the texture wraps over at the edges (repeat)
-        glTexParameterf( GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP );
-        glTexParameterf( GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP );
+        glTexParameterf( GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP ); check_gl_error;
+        glTexParameterf( GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP ); check_gl_error;
     }
     
-    void upload_rgb( const std::vector<uint8_t> &buf, GLsizei width, GLsizei height ) {
-        glBindTexture( GL_TEXTURE_2D, tex_image_ );
+//     void upload_rgb( const std::vector<uint8_t> &buf, GLsizei width, GLsizei height ) {
+//         glBindTexture( GL_TEXTURE_2D, tex_image_ );
+//         
+//         glTexImage2D( GL_TEXTURE_2D, 0, GL_RGB8, 0, 0, width, height, 0 );
+//         
+//     }
+    
+    void upload_rgb( const uint8_t * const begin, GLsizei width, GLsizei height ) {
+//         size_t bufsize = std::distance(begin, end);
+//         if( bufsize != width * height * 3 ) {
+//             throw std::runtime_error( "bad buffer size for upload_rgb\n" );
+//         }
         
-        glCopyTexImage2D( GL_TEXTURE_2D, 0, GL_RGB8, 0, 0, width, height, 0 );
+        
+        // stupid convert to opengl format...
+        const uint8_t *ptr = begin;
+        
+        std::vector<GLuint> tmp_buf( width * height );
+        auto oit = tmp_buf.begin();
+        
+        for( ; oit != tmp_buf.end(); ++oit ) {
+            GLuint r = *ptr++;
+            GLuint g = *ptr++;
+            GLuint b = *ptr++;
+            
+//             GLuint r = 0;
+//             GLuint g = 255;
+//             GLuint b = 255;
+
+            
+            *oit = r << 24 | g << 16 | b << 8 | 255;
+            //*oit = 0xffffffff;
+        }
+        
+        glBindTexture( GL_TEXTURE_2D, tex_image_ ); check_gl_error;
+        
+        glTexImage2D( GL_TEXTURE_2D, 0, GL_RGB8, width, height, 0, GL_RGBA, GL_UNSIGNED_INT_8_8_8_8, tmp_buf.data()); check_gl_error;
         
     }
+    
+    void bind() {
+        glBindTexture( GL_TEXTURE_2D, tex_image_ );
+    }
+   
+    
+    
     ~gl_texture() {
         glDeleteTextures( 1, &tex_image_ );
     }

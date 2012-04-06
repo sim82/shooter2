@@ -41,6 +41,7 @@ typedef CL_Vec3i vec3i;
 typedef CL_Vec3f vec3f;
 
 typedef CL_Vec2i vec2i;
+typedef CL_Vec2f vec2f;
 
 struct col3f_sse {
     float r;

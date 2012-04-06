@@ -324,6 +324,10 @@ public:
 //         vbob_.update_vertices( scene_static_.planes().begin(), scene_static_.planes().end());
 //         
         vbob_ts_ = vbo_builder_tristrip( scene_static_.tristrip_at(0) );
+        auto bin_map = scene_static_.bin_maps().at(0);
+        
+        lightmap.upload_rgb( (uint8_t*)bin_map.data(), 256, 256 );
+        
         
     }
     
@@ -346,6 +350,8 @@ public:
     }
     void draw() {
 //         vbob_.draw_arrays();
+
+        lightmap.bind();
         vbob_ts_.draw_arrays();
     }
 private:
@@ -362,6 +368,7 @@ private:
     
 //     vbo_builder vbob_;
     vbo_builder_tristrip vbob_ts_;
+    gl_texture lightmap;
 };
 
 
@@ -732,6 +739,7 @@ public:
         glDepthMask(GL_TRUE);
         glDepthFunc(GL_LESS);
         
+        glEnable(GL_TEXTURE_2D);
         glShadeModel(GL_FLAT);
     }
 
@@ -855,8 +863,8 @@ public:
 //         vbob.update_index_buffer(scene_static_.planes().size());
 //         vbob.update_vertices( scene_static_.planes().begin(), scene_static_.planes().end());
         
-         std::ifstream is( "cryistal-castle-hidden-ramp.txt" );
-        //std::ifstream is( "house1.txt" );
+     //    std::ifstream is( "cryistal-castle-hidden-ramp.txt" );
+        std::ifstream is( "house1.txt" );
         render_unit runit(is, vec3f( -40.0, -20.0, -40.0 ));
         
 //         std::ifstream is2( "cryistal-castle-tree-wave.txt" );

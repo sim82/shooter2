@@ -264,7 +264,7 @@ private:
 
     void do_radiosity_sse( size_t first, size_t last ) {
         const int steps = 1;
-        const float min_ff = 0;
+//         const float min_ff = 0;
 //      std::fill(e_rad_sse_.begin(), e_rad_sse_.end(), vec3f(0.0, 0.0, 0.0));
 //      std::fill(e_rad2_sse_.begin(), e_rad2_sse_.end(), vec3f(0.0, 0.0, 0.0));
 

@@ -270,9 +270,15 @@ public:
         const std::vector<vec3f> &vecs() const {
             return strip_vecs_;
         }
+        const std::vector<vec2f> &tex() const {
+            return strip_tex_;
+        }
+        
         const std::vector<uint32_t> &idx() const {
             return strip_idx_;
         }
+        
+        
         
         const std::vector<idx_pair> &idx_pairs() const {
             return strip_idx_pairs_;
@@ -282,6 +288,10 @@ public:
         std::vector<vec3f> &vecs() {
             return strip_vecs_;
         }
+        std::vector<vec2f> &tex() {
+            return strip_tex_;
+        }
+        
         std::vector<uint32_t> &idx() {
             return strip_idx_;
         }
@@ -292,8 +302,9 @@ public:
     
     private:
         std::vector<vec3f> strip_vecs_;
+        std::vector<vec2f> strip_tex_;
         std::vector<uint32_t> strip_idx_;
-    
+        
     
         std::vector<idx_pair> strip_idx_pairs_;
         
