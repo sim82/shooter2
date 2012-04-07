@@ -114,6 +114,7 @@ void vbo_builder_tristrip::draw_arrays() {
     glEnableClientState(GL_TEXTURE_COORD_ARRAY);
 // This is the actual draw command
     
+//      glPolygonMode(GL_FRONT_AND_BACK, GL_LINE);
 //     glDrawElements(GL_TRIANGLE_STRIP, index_num_, GL_UNSIGNED_INT, (GLvoid*)((char*)NULL)); check_gl_error;
     glDrawElements(GL_TRIANGLE_STRIP, index_num_, GL_UNSIGNED_INT, (GLvoid*)((char*)NULL)); check_gl_error;
 }

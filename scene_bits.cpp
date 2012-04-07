@@ -576,13 +576,14 @@ public:
                 return vec3i( x_, y_, z_ );
                 
             case plane::dir_zx_n:
-                return vec3i( bitmap_.x() - x_ - 1, y_, z_ );
-                
-            case plane::dir_yz_n:
                 return vec3i( x_, y_, bitmap_.z() - z_ - 1 );
                 
-            case plane::dir_xy_n:
+                
+            case plane::dir_yz_n:
                 return vec3i( x_, bitmap_.y() - y_ - 1, z_ );
+                
+            case plane::dir_xy_n:
+                return vec3i( bitmap_.x() - x_ - 1, y_, z_ );
                 
                 
         }
@@ -1076,16 +1077,16 @@ const static std::array<vec3f, 4>reorder_strip( const std::array<vec3f, 4> &in, 
     case plane::dir_yz_p:
     case plane::dir_xy_p:
     default:
-        return std::array<vec3f, 4>{{in[0], in[1], in[3], in[2]}};
-        
+         return std::array<vec3f, 4>{{in[0], in[1], in[3], in[2]}};
+//          return std::array<vec3f, 4>{{in[3], in[0], in[2], in[1]}};
         
         
     case plane::dir_zx_n:
     case plane::dir_yz_n:
     case plane::dir_xy_n:
-        //return std::array<vec3f, 4>{in[2], in[1], in[3], in[0]};
-        return std::array<vec3f, 4>{{in[1], in[2], in[0], in[3]}};
-    //    return std::array<vec3f, 4>{{in[0], in[3], in[1], in[2]}};
+        
+//         return std::array<vec3f, 4>{{in[1], in[2], in[0], in[3]}};
+       return std::array<vec3f, 4>{{in[3], in[0], in[2], in[1]}};
     };
     
 }
@@ -1254,8 +1255,8 @@ void scene_static::init_binmaps() {
 
     size_t plane_idx = 0;
     
-    for( plane::dir_type dir : {plane::dir_zx_p, plane::dir_zx_n, plane::dir_yz_p, plane::dir_yz_n, plane::dir_xy_p, plane::dir_xy_n} ) {
-//     for( auto dir : {plane::dir_zx_n, plane::dir_zx_n} ) {
+   for( plane::dir_type dir : {plane::dir_zx_p, plane::dir_zx_n, plane::dir_yz_p, plane::dir_yz_n, plane::dir_xy_p, plane::dir_xy_n} ) {
+//       for( auto dir : {plane::dir_zx_p, plane::dir_xy_n} ) {
         face_iterator it(solidc, dir);
         atlases.push_back(lightmap_atlas_slice( dir, it.last_dim_pos()));
         do {
@@ -1313,6 +1314,113 @@ std::string to_string( const vec3i &v ) {
     return ss.str();
 }
 
+std::string to_string( const vec3f &v ) {
+    std::stringstream ss;
+    ss << "(" << v.x << " " << v.y << " " << v.z << ")";
+    return ss.str();
+}
+
+#if 0
+void scene_static::init_strips() {
+
+   
+    const auto &solidc = solid_;
+
+    vec3i light_pos( 10, 10, 10 );
+
+    int pump_factor_ = 2;
+    float scale = 1.0 / pump_factor_;
+
+    
+    size_t num_restart = 0;
+    bool restart = false;
+    //for( auto dir : {plane::dir_zx_p, plane::dir_zx_n, plane::dir_yz_p, plane::dir_yz_n, plane::dir_xy_p, plane::dir_xy_n} ) {
+    for( auto dir : {plane::dir_xy_p} ) {
+        face_iterator it(solidc, dir);
+        
+        do {
+            if( it.is_face() ) {
+                vec3i pos = it.pos();
+                
+                if( dir == plane::dir_zx_n && pos.y == 0 ) {
+                    continue; // skip faces on the underside of the level
+                }
+                
+                
+                auto texel_addr = plane_texel_.at(planes_.size()); 
+                size_t lightmap_index;
+                vec2i texeli;
+                
+                std::tie(lightmap_index,texeli.x,texeli.y) = texel_addr;
+                auto &ts = tristrips_.at(lightmap_index);
+                auto &strip_idx_ = ts.idx();
+                auto &strip_vecs_ = ts.vecs();
+                auto &strip_tex_ = ts.tex();
+                auto &strip_idx_pairs_ = ts.idx_pairs();
+                
+                planes_.push_back( plane( dir, base_pos_, pos, scale, 1.0));
+                
+                auto &qverts = planes_.back().verts();
+                
+                auto verts = reorder_strip(qverts, dir);
+                uint32_t first_idx = strip_vecs_.size();
+                if( restart ) {
+                    //strip_idx_.push_back(restart_idx);
+                    // output degenerated tris to jump to restart position
+                    if( true ) {
+                        strip_idx_.push_back(strip_vecs_.size()-1);
+                        strip_idx_.push_back(strip_vecs_.size());
+                    } else {
+                        strip_idx_.push_back(strip_vecs_.size());
+                        
+                        vec3f t = strip_vecs_.back();
+                        strip_vecs_.push_back(t);
+                        strip_idx_.push_back(strip_vecs_.size());
+                        strip_vecs_.push_back(verts[0]);
+                    }
+                    
+                    strip_idx_.push_back(strip_vecs_.size());
+                    strip_vecs_.push_back(verts[0]);
+                    
+                    strip_idx_.push_back(strip_vecs_.size());
+                    strip_vecs_.push_back(verts[1]);
+                    
+                    strip_idx_.push_back(strip_vecs_.size());
+                    strip_vecs_.push_back(verts[2]);
+                    
+                    strip_idx_.push_back(strip_vecs_.size());
+                    strip_vecs_.push_back(verts[3]);
+                    
+                    restart = false;
+                } else {
+                    strip_idx_.push_back(strip_vecs_.size());
+                    strip_vecs_.push_back(verts[2]);
+                            
+                    strip_idx_.push_back(strip_vecs_.size());
+                    strip_vecs_.push_back(verts[3]);
+                }
+                strip_idx_pairs_.emplace_back( first_idx, strip_vecs_.size());
+                
+            } else {
+                restart = true;
+            }
+            
+        } while( !it.inc() );
+        restart = true;
+        
+    }
+
+    
+    std::cout << "planes (striped): " << planes_.size() << "\n";
+    std::cout << "vecs: " << tristrips_.at(0).vecs().size() << "\n";
+    planes_.shrink_to_fit();
+
+
+
+}
+#endif
+
+#if 0
 void scene_static::init_strips() {
 
     const int bin_width = 256;
@@ -1330,20 +1438,23 @@ void scene_static::init_strips() {
     std::vector<size_t> share_front;
     
     //tristrips_.resize(1);
-    bool restart = false;
-    for( plane::dir_type dir : {plane::dir_zx_p, plane::dir_zx_n, plane::dir_yz_p, plane::dir_yz_n, plane::dir_xy_p, plane::dir_xy_n} ) {
-//      for( auto dir : {plane::dir_zx_n,plane::dir_yz_n,plane::dir_xy_n} ) {
+    bool restart = true;
+  //  for( plane::dir_type dir : {plane::dir_zx_p, plane::dir_zx_n, plane::dir_yz_p, plane::dir_yz_n, plane::dir_xy_p, plane::dir_xy_n} ) {
+    for( auto dir : {plane::dir_zx_p, plane::dir_xy_n} ) {
         face_iterator it(solidc, dir);
         share_front.clear();
         share_back.clear();
         do {
             if( it.second_dim_changed() ) {
+                restart = true;
                 share_back.swap(share_front);
                 share_front.clear();
-//                 share_back.clear();
+                share_back.clear();
+                
+                std::cout << "<<<<<<<<<<<<<<<<<<\n";
             }
             if( it.last_dim_changed() ) {
-                
+                restart = true;
                 share_front.clear();
                 share_back.clear();
             }
@@ -1353,9 +1464,11 @@ void scene_static::init_strips() {
                 size_t fcd = it.pos2d().y + 1;
                 size_t fcdm1 = fcd - 1;
                 
-                vec2f texel_up( -1.0 / bin_height, 0.0 );
-                vec2f texel_left( 0.0, -1.0 / bin_height );
-                float off = 1.0;
+                //vec2f texel_up( -1.0 / bin_height, 0.0 );
+                //vec2f texel_left( 0.0, -1.0 / bin_height );
+                vec2f texel_left(0,0);//( 0.0, -1.0 / bin_height );
+                vec2f texel_up( 0.0, 0.0 );
+                float off = 0.5;
                 switch( dir ) {
                     case plane::dir_zx_n:
                     case plane::dir_yz_n:
@@ -1363,7 +1476,169 @@ void scene_static::init_strips() {
 
                         fcdm1 = fcd + 1;
                         texel_left *= -1;
-                        texel_up *= -1;
+                      //  texel_up *= -1;
+//                         off = 0.0;
+                        break;
+                    default:
+                    {}
+                }
+                
+//                 std::cout << "fcd: " << pos.x << " " << pos.y << " " << pos.z << ":" << fcd << "\n";
+                
+//                 if( dir == plane::dir_zx_n && pos.y == 0 ) {
+//                     continue; // skip faces on the underside of the level
+//                 }
+                
+                
+                auto texel_addr = plane_texel_.at(planes_.size()); // current size of planes_ == plane index (keep it like that!)
+                size_t lightmap_index;
+                vec2i texeli;
+                
+                std::tie(lightmap_index,texeli.x,texeli.y) = texel_addr;
+//                 std::cout << "texel: " << texel.x << " " << texel.y << "\n";
+                
+//                 const float off = 1.0;
+                
+                vec2f texel( (texeli.x + off) / float(bin_width), (texeli.y + off) / float(bin_height) );
+                
+                //size_t lightmap_index = std::get<0>(texel_addr);
+                
+                planes_.push_back( plane( dir, base_pos_, pos, scale, 1.0));
+                
+                auto &qverts = planes_.back().verts();
+
+                
+                if( tristrips_.size() <= lightmap_index ) {
+                    tristrips_.resize( lightmap_index + 1 );
+                }
+                auto &ts = tristrips_.at(lightmap_index);
+                auto &strip_idx_ = ts.idx();
+                auto &strip_vecs_ = ts.vecs();
+                auto &strip_tex_ = ts.tex();
+                auto &strip_idx_pairs_ = ts.idx_pairs();
+                
+                
+                
+                auto verts = reorder_strip(qverts, dir);
+                uint32_t first_idx = strip_vecs_.size();
+//                 std::cout << qverts[0].x << " " << qverts[0].y << " " << qverts[0].z << "\n";
+//                 std::cout << qverts[1].x << " " << qverts[1].y << " " << qverts[1].z << "\n";
+//                 std::cout << "qverts: " << to_string(qverts[0]) << " "<< to_string(qverts[1]) << " " << to_string(qverts[2]) << " " << to_string(qverts[3]) << "\n"; 
+                std::cout << "verts: " << to_string(verts[0]) << " "<< to_string(verts[1]) << " " << to_string(verts[2]) << " " << to_string(verts[3]) << "\n"; 
+                
+//                 vec2f texel(0.0, 0.0);
+                if( restart ) {
+                    //strip_idx_.push_back(restart_idx);
+                    // output degenerated tris to jump to restart position
+//                     if( !strip_idx_.empty() ) {
+//                         auto b = strip_idx_.back();
+//                         strip_idx_.push_back( b );
+//                         strip_idx_.push_back(strip_vecs_.size());
+//                     }
+                        
+                    strip_idx_.push_back( strip_vecs_.size() -1 );
+                    strip_idx_.push_back(strip_vecs_.size());
+                        
+                    
+                    strip_idx_.push_back(strip_vecs_.size());
+                    strip_vecs_.push_back(verts[0]);
+                    strip_tex_.push_back(texel + texel_left + texel_up);
+                    
+                    strip_idx_.push_back(strip_vecs_.size());
+                    strip_vecs_.push_back(verts[1]);
+                    strip_tex_.push_back(texel + texel_left);
+                    
+                    strip_idx_.push_back(strip_vecs_.size());
+                    strip_vecs_.push_back(verts[2]);
+                    strip_tex_.push_back(texel);
+                    
+                    strip_idx_.push_back(strip_vecs_.size());
+                    strip_vecs_.push_back(verts[3]);
+                    strip_tex_.push_back(texel);
+                    
+                    restart = false;
+                } else {
+                    strip_idx_.push_back(strip_vecs_.size());
+                    strip_vecs_.push_back(verts[2]);
+                    strip_tex_.push_back(texel);
+                            
+                    strip_idx_.push_back(strip_vecs_.size());
+                    strip_vecs_.push_back(verts[3]);
+                    strip_tex_.push_back(texel);
+                }
+                strip_idx_pairs_.emplace_back( first_idx, strip_vecs_.size());
+                
+            } else {
+                restart = true;
+            }
+            
+        } while( !it.inc() );
+        restart = true;
+        
+    }
+
+    
+    std::cout << "planes (striped): " << planes_.size() << "\n";
+    std::cout << "vecs: " << tristrips_.at(0).vecs().size() << "\n";
+    planes_.shrink_to_fit();
+}
+#endif
+#if 1
+void scene_static::init_strips() {
+
+    const int bin_width = 256;
+    const int bin_height = bin_width;
+    
+    const auto &solidc = solid_;
+
+    vec3i light_pos( 10, 10, 10 );
+
+    int pump_factor_ = 2;
+    float scale = 1.0 / pump_factor_;
+    
+    
+    std::vector<size_t> share_back;
+    std::vector<size_t> share_front;
+    
+    //tristrips_.resize(1);
+    bool restart = true;
+    for( plane::dir_type dir : {plane::dir_zx_p, plane::dir_zx_n, plane::dir_yz_p, plane::dir_yz_n, plane::dir_xy_p, plane::dir_xy_n} ) {
+//     for( auto dir : {plane::dir_zx_p, plane::dir_xy_n} ) {
+        face_iterator it(solidc, dir);
+        share_front.clear();
+        share_back.clear();
+        do {
+            if( it.second_dim_changed() ) {
+                restart = true;
+                share_back.swap(share_front);
+                share_front.clear();
+//                 share_back.clear();
+            }
+            if( it.last_dim_changed() ) {
+                restart = true;
+                share_front.clear();
+                share_back.clear();
+            }
+            
+            if( it.is_face() ) {
+                vec3i pos = it.pos();
+                size_t fcd = it.pos2d().y + 1;
+                size_t fcdm1 = fcd - 1;
+                vec2f texel_up(0,0);
+//                 vec2f texel_up( -1.0 / bin_height, 0.0 );
+                //vec2f texel_left( 0.0, -1.0 / bin_height );
+                vec2f texel_left( 0.0, 0.0 );
+                float off = 0.5;
+                
+                bool dir_pos = true;
+                switch( dir ) {
+                    case plane::dir_zx_n:
+                    case plane::dir_yz_n:
+                    case plane::dir_xy_n:
+//                         dir_pos = false;
+                        //fcdm1 = fcd + 1;
+                        texel_left *= -1;
+                      //  texel_up *= -1;
                         off = 0.0;
                         break;
                     default:
@@ -1408,136 +1683,107 @@ void scene_static::init_strips() {
                 
                 auto verts = reorder_strip(qverts, dir);
                 uint32_t first_idx = strip_vecs_.size();
-                if( restart ) {
-                    //strip_idx_.push_back(restart_idx);
-                    
-                    size_t shared = -1;
-                    
-                    if( fcdm1 < share_back.size() ) {
-                        shared = share_back[fcdm1];
-                    }
-                    
-                    // output degenerated tris to jump to restart position
-                    if(false)
-                    {
-                        strip_idx_.push_back(strip_vecs_.size()-1);
-                        strip_idx_.push_back(strip_vecs_.size());
-                    } else {
-                        if( strip_idx_.size() > 0 ) {
-                            size_t last = strip_idx_.back();
-                            strip_idx_.push_back(last);
-//                             strip_idx_.push_back(strip_vecs_.size());
-                            
-                            if( shared == -1 ) {
-                                strip_idx_.push_back(strip_vecs_.size());
-                            } else {
-                                strip_idx_.push_back(shared);
-                            }
-                            
+                
+                if( dir_pos ) {
+                    if( restart ) {
+                        //strip_idx_.push_back(restart_idx);
+                        
+                        size_t shared = -1;
+                        
+                        if( fcdm1 < share_back.size() ) {
+                            shared = share_back[fcdm1];
                         }
-                    }
-                    
-                    
-                    
-                    if( shared == -1 ) {
+                        
+                        // output degenerated tris to jump to restart position
+                        if(false)
+                        {
+                            strip_idx_.push_back(strip_vecs_.size()-1);
+                            strip_idx_.push_back(strip_vecs_.size());
+                        } else {
+                            if( strip_idx_.size() > 0 ) {
+                                size_t last = strip_idx_.back();
+                                strip_idx_.push_back(last);
+                                //                             strip_idx_.push_back(strip_vecs_.size());
+                                
+                                if( shared == -1 ) {
+                                    strip_idx_.push_back(strip_vecs_.size());
+                                } else {
+                                    strip_idx_.push_back(shared);
+                                }
+                                
+                            }
+                        }
+                        
+                      
+                        
+                        if( shared == -1 ) {
+                            strip_idx_.push_back(strip_vecs_.size());
+                            strip_vecs_.push_back(verts[0]);
+                            strip_tex_.push_back(texel + texel_up + texel_left);// - vec2f( -0.0 / float(bin_width), 1.0 / float(bin_width)) /*- vec2f(0,(1.0/bin_height))*/);                            
+                        } else {
+                            strip_idx_.push_back(shared);
+                        }
+                        
                         strip_idx_.push_back(strip_vecs_.size());
-                        strip_vecs_.push_back(verts[0]);
-                        strip_tex_.push_back(texel + texel_up + texel_left);// - vec2f( -0.0 / float(bin_width), 1.0 / float(bin_width)) /*- vec2f(0,(1.0/bin_height))*/);                            
-                    } else {
-                        strip_idx_.push_back(shared);
+                        
+                        if( share_front.size() <= fcdm1) {
+                            share_front.resize( fcdm1 + 1, -1 );
+                        }
+                        share_front[fcdm1] = strip_vecs_.size();
+                        
+                        
+                        
+                        strip_vecs_.push_back(verts[1]);
+                        strip_tex_.push_back(texel + texel_left );// - vec2f(-1.0 / bin_height, 1.0 / float(bin_width)));
+                        
+                        //                     strip_idx_.push_back(strip_vecs_.size());
+                        //                     strip_vecs_.push_back(verts[0]);
+                        //                     strip_tex_.push_back(texel );
+                        //                     
+                        //                     
+                        //                     strip_idx_.push_back(strip_vecs_.size());
+                        //                     strip_vecs_.push_back(verts[1]);
+                        //                     strip_tex_.push_back(texel );
+                        restart = false;
                     }
                     
-                    strip_idx_.push_back(strip_vecs_.size());
-                    
-                    if( share_front.size() <= fcdm1) {
-                        share_front.resize( fcdm1 + 1, -1 );
-                    }
-                    share_front[fcdm1] = strip_vecs_.size();
-                    
-                    
-                    
-                    strip_vecs_.push_back(verts[1]);
-                    strip_tex_.push_back(texel + texel_left );// - vec2f(-1.0 / bin_height, 1.0 / float(bin_width)));
-                    
-//                     strip_idx_.push_back(strip_vecs_.size());
-//                     strip_vecs_.push_back(verts[0]);
-//                     strip_tex_.push_back(texel );
-//                     
-//                     
-//                     strip_idx_.push_back(strip_vecs_.size());
-//                     strip_vecs_.push_back(verts[1]);
-//                     strip_tex_.push_back(texel );
-                    restart = false;
-                    
-                }
-//                     size_t shared = -1;
-//                     
-//                     if( fcd < share_back.size() ) {
-//                         shared = share_back[fcd];
-//                     }
-//                     
-//                     if( shared == -1 ) {
-//                         strip_idx_.push_back(strip_vecs_.size());
-//                         strip_vecs_.push_back(verts[2]);
-//                         strip_tex_.push_back(texel /*- vec2f(0,(1.0/bin_height))*/);                            
-//                     } else {
-//                         strip_idx_.push_back(shared);
-//                         std::cout << "shared using: " << to_string(strip_vecs_[shared]) << " " << to_string(verts[2]) << "\n";
-//                     }
-//                     
-//                     
-//                     
-//                     strip_idx_.push_back(strip_vecs_.size());
-//                     if( share_front.size() <= fcd ) {
-//                         share_front.resize( fcd + 1, -1 );
-//                     }
-//                     share_front[fcd] = strip_vecs_.size();
-//                     
-//                     
-//                     strip_vecs_.push_back(verts[3]);
-//                     strip_tex_.push_back(texel);
-//                     
-//                     
-//                     
-//                     
-//                     
-//                     
-//                    
-//                 } else
-                {
-                    
-                    
-                    size_t shared = -1;
-                    
-                    if( fcd < share_back.size() ) {
-                        shared = share_back[fcd];
-                    }
-                    
-                    if( shared == -1 ) {
+                    {
+                        
+                        
+                        size_t shared = -1;
+                        
+                        if( fcd < share_back.size() ) {
+                            shared = share_back[fcd];
+                        }
+                        
+                        if( shared == -1 ) {
+                            strip_idx_.push_back(strip_vecs_.size());
+                            strip_vecs_.push_back(verts[2]);
+                            strip_tex_.push_back(texel + texel_up/*- vec2f(0,(1.0/bin_height))*/);                            
+                        } else {
+                            strip_idx_.push_back(shared);
+                        }
+                        
                         strip_idx_.push_back(strip_vecs_.size());
-                        strip_vecs_.push_back(verts[2]);
-                        strip_tex_.push_back(texel + texel_up/*- vec2f(0,(1.0/bin_height))*/);                            
-                    } else {
-                        strip_idx_.push_back(shared);
+                        
+                        if( share_front.size() <= fcd ) {
+                            share_front.resize( fcd + 1, -1 );
+                        }
+                        share_front[fcd] = strip_vecs_.size();
+                        
+                        
+                        
+                        strip_vecs_.push_back(verts[3]);
+                        strip_tex_.push_back(texel);
+                        
+                        
+                        
+                        
+                        
                     }
-                    
-                    strip_idx_.push_back(strip_vecs_.size());
-                    
-                    if( share_front.size() <= fcd ) {
-                        share_front.resize( fcd + 1, -1 );
-                    }
-                    share_front[fcd] = strip_vecs_.size();
-                    
-                    
-                    
-                    strip_vecs_.push_back(verts[3]);
-                    strip_tex_.push_back(texel);
-                    
-                    
-                    
-                    
-                    
-                }
+                } 
+                        
+
                 strip_idx_pairs_.emplace_back( first_idx, strip_vecs_.size());
                 
             } else {
@@ -1557,6 +1803,7 @@ void scene_static::init_strips() {
 
 }
 
+#endif
 
 void light_utils::render_light(std::vector< vec3f >* emitptr, const scene_static& scene, const vec3f& light_pos, const vec3f& light_color) {
     assert( emitptr != nullptr );
