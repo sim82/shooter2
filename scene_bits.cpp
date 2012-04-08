@@ -1589,6 +1589,10 @@ void scene_static::init_strips() {
     const int bin_width = 256;
     const int bin_height = bin_width;
     
+    const float tex_sx = 1.0 / (bin_width - 1);
+    const float tex_sy = 1.0 / (bin_height - 1);
+    
+    
     const auto &solidc = solid_;
 
     vec3i light_pos( 10, 10, 10 );
@@ -1661,7 +1665,7 @@ void scene_static::init_strips() {
                 
 //                 const float off = 1.0;
                 
-                vec2f texel( (texeli.x + off) / float(bin_width), (texeli.y + off) / float(bin_height) );
+                vec2f texel( (texeli.x + off) * tex_sx, (texeli.y + off) * tex_sy );
                 
                 //size_t lightmap_index = std::get<0>(texel_addr);
                 

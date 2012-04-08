@@ -115,7 +115,7 @@ public:
         } else {
 #if 1
             const size_t num_planes = scene_static_.planes().size();
-            const size_t num_threads = 3;
+            const size_t num_threads = 1;
             
             auto part = calc_plane_distribution(num_threads);
             for ( size_t i = 0; i < num_threads; ++i ) {
@@ -291,7 +291,7 @@ private:
 
 //                 const size_t s = (ffs_[j].size() / 4) * 4;
 
-                const bool unroll = !false;
+                const bool unroll = false;
                 const size_t send_unroll = (ffs_[j].size() / 4) * 4;
                 const size_t send = ffs_[j].size();
                 size_t sstart = 0;
