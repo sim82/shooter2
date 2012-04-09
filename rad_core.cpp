@@ -86,7 +86,7 @@ public:
         return parts;
     }
 
-    rad_core_threaded( const scene_static &scene_static, const light_static &light_static /*, const std::vector<std::pair<size_t,size_t>> &part_bounds */)
+    rad_core_threaded( const scene_static &scene_static, const light_static &light_static, const size_t num_threads)
             : 
             scene_static_(scene_static),
             light_static_(light_static),
@@ -115,7 +115,7 @@ public:
         } else {
 #if 1
             const size_t num_planes = scene_static_.planes().size();
-            const size_t num_threads = 2;
+    
             
             auto part = calc_plane_distribution(num_threads);
             for ( size_t i = 0; i < num_threads; ++i ) {
@@ -368,15 +368,20 @@ private:
 
                 const float * const rad_base = (float*)rad_(0);
                 for ( size_t k = sstart; k < send; ++k ) {
-                    size_t target = targets[k]; // target hast to be pre-multiplied by 4 in light_static::do_preporcessing!
-                    
                     const vec_t ff = vu::set1( ffs[k] );
-//                     const vec_t ff_diff = ;
-                    //const vec_t cd_ff = vu::mul( col_diff, ff);
-//                     rad = vu::add( rad, vu::mul( vu::load( (float*) rad_(target)), vu::mul( ff, col_diff ) ));
+                    const size_t target = targets[k]; // target has to be pre-multiplied by 4 in light_static::do_preporcessing!
+
+                    // at leat for sandy bridge/three-operand sse, gcc puts the
+                    // ff, col_diff multiplication and loop overhead between the
+                    // rad-color load and the last multiplication, which seems
+                    // to mask the L1 cache misses quite well...
                     const vec_t tcol = vu::load( rad_base + target );
+                    const vec_t ff_cd = vu::mul( ff, col_diff );
+                    
+                    
+                    
 #if 1                    
-                     rad = vu::add( rad, vu::mul( tcol, vu::mul( ff, col_diff )));
+                     rad = vu::add( rad, vu::mul( tcol, ff_cd));
 #else
                     
                     // this version seems to be a bit faster on core2 class cpus but is slower in sandy bridge...
@@ -764,7 +769,9 @@ private:
 #endif
 
 std::unique_ptr<rad_core> make_rad_core_threaded(const scene_static &scene_static, const light_static &light_static) {
-    return make_unique<rad_core_threaded>( scene_static, light_static );
+    const size_t num_threads = 1;
+    
+    return make_unique<rad_core_threaded>( scene_static, light_static, num_threads );
   //  return make_unique<rad_core_lockfree>( scene_static, light_static );
 }
 
