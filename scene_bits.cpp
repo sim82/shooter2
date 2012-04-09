@@ -1127,7 +1127,7 @@ light_static setup_formfactors( const std::vector<plane> &planes_, const bitmap3
 
             //              os << ff << "\n";
 
-            dist_cull = ff < 5e-5;
+            dist_cull = ff < 5e-6;
 
             if ( !dist_cull && i != j ) {
 
@@ -1145,7 +1145,7 @@ light_static setup_formfactors( const std::vector<plane> &planes_, const bitmap3
 
                 // j < i => ff2s_[j] is already initialized.
                 ff2s_[j].push_back(ff);
-                ff2_target_[j].push_back(i);
+                ff2_target_[j].push_back(i); // pre-do multiplication for sse vector addressing
 
                 //                  minj = std::min( minj, j );
                 //                  maxj = std::max( maxj, j );

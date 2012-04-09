@@ -313,6 +313,8 @@ public:
         }
         
         
+        light_static_.do_postprocessing();
+        
         light_dynamic_ = light_dynamic(scene_static_.planes().size() );
         rad_core_ = make_rad_core_threaded(scene_static_, light_static_);
         

@@ -7,7 +7,8 @@ add_executable( ortho ortho.cpp player_bits.cpp scene_bits.cpp crystal_bits.cpp 
 
 
 SET(ClanLib_DIR  ${CMAKE_CURRENT_SOURCE_DIR})
-SET( CMAKE_CXX_FLAGS ${CMAKE_CXX_FLAGS} "-Wall -std=c++0x" )
+SET( CMAKE_CXX_FLAGS ${CMAKE_CXX_FLAGS} "-Wall -std=c++0x -march=native" )
+# SET( CMAKE_CXX_FLAGS ${CMAKE_CXX_FLAGS} "-Wall -std=c++0x -march=core2" )
 
 SET( ClanLib_MAJOR_VERSION 2 )
 SET( ClanLib_MINOR_VERSION 3 )

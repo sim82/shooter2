@@ -332,6 +332,19 @@ public:
     
     void write( std::ostream &os, uint64_t hash ) ;
 
+    void do_postprocessing() {
+        // this is the place for strange modifications like pre-multilplying
+        // the target indices to turn them into direct addresses into the buffer 
+        // of 4-wide sse vectors.
+        
+        std::for_each( f_target_.begin(), f_target_.end(), [] ( std::vector<int> &target ) {
+            std::for_each( target.begin(), target.end(), [] ( int &t ) {
+                t *= 4;
+            } );
+            
+        });
+        
+    }
     
     size_t num_planes() const {
         return f_fact_.size();
@@ -341,10 +354,16 @@ public:
         return f_fact_;
     }
     
-    const std::vector<std::vector<int> > &f_target() const {
+//     const std::vector<std::vector<int> > &f_target() const {
+//         return f_target_;
+//     }
+
+    const std::vector<std::vector<int> > &f_target_off4() const {
         return f_target_;
     }
-
+    
+    
+    
 //     const std::vector<std::vector<ff_pair> > &f_pairs() const {
 //         return f_pairs_;
 //     }

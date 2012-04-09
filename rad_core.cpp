@@ -115,7 +115,7 @@ public:
         } else {
 #if 1
             const size_t num_planes = scene_static_.planes().size();
-            const size_t num_threads = 1;
+            const size_t num_threads = 2;
             
             auto part = calc_plane_distribution(num_threads);
             for ( size_t i = 0; i < num_threads; ++i ) {
@@ -289,7 +289,7 @@ private:
         //std::copy( emit_sse_.begin(), emit_sse_.end(), e_rad_sse_.begin() );
 
         const std::vector<std::vector<float> > &ffs_ = light_static_.f_fact();
-        const std::vector<std::vector<int> > &ff_target_ = light_static_.f_target();
+        const std::vector<std::vector<int> > &ff_target_ = light_static_.f_target_off4();
 //         auto &ff_pairs = light_static_.f_pairs();
         
         const std::vector<plane> &planes_ = scene_static_.planes();
@@ -300,17 +300,17 @@ private:
 //         std::cout << "do: " << first << " " << last << "\n";
         vec_t reflex_factor = vu::set1(1.0);
         
-	
-	const size_t i_unroll = 2;
-	size_t pints = 0;
+        
+        const size_t i_unroll = 2;
+        size_t pints = 0;
         for ( int i = 0; i < steps; ++i ) {
             //for( auto it = pairs_.begin(); it != pairs_.end(); ++it, ++ff_it ) {
-
-
+                
+                
             for ( size_t j = first; j < last; ++j ) {
-
-//                 const size_t s = (ffs_[j].size() / 4) * 4;
-
+                    
+                //                 const size_t s = (ffs_[j].size() / 4) * 4;
+                
                 const bool unroll = !false;
                 const size_t send_unroll = (ffs_[j].size() / i_unroll) * i_unroll;
                 const size_t send = ffs_[j].size();
@@ -319,7 +319,7 @@ private:
                 vec_t rad2 = vu::set1(0);
                 vec_t rad3 = vu::set1(0);
                 vec_t rad4 = vu::set1(0);
-
+                
                 const vec3f cd = planes_[j].col_diff();
                 const vec_t col_diff = vu::set( 0, cd.b, cd.g, cd.r );
 
@@ -364,19 +364,24 @@ private:
                     }
                     sstart = send_unroll;
                 }
-#endif           
+#endif          
+
+                const float * const rad_base = (float*)rad_(0);
                 for ( size_t k = sstart; k < send; ++k ) {
-                    size_t target = targets[k];
+                    size_t target = targets[k]; // target hast to be pre-multiplied by 4 in light_static::do_preporcessing!
                     
                     const vec_t ff = vu::set1( ffs[k] );
 //                     const vec_t ff_diff = ;
                     //const vec_t cd_ff = vu::mul( col_diff, ff);
 //                     rad = vu::add( rad, vu::mul( vu::load( (float*) rad_(target)), vu::mul( ff, col_diff ) ));
-//                     const vec_t tcol = vu::load( (float*) rad_(target));
+                    const vec_t tcol = vu::load( rad_base + target );
+#if 1                    
+                     rad = vu::add( rad, vu::mul( tcol, vu::mul( ff, col_diff )));
+#else
                     
-//                     rad = vu::add( rad, vu::mul(vu::mul( tcol, ff ), col_diff ));
-//                     rad = vu::add( rad, vu::mul( vu::mul( col_diff, tcol), ff ));
-                    rad = vu::add( rad, vu::mul (vu::mul( vu::load( (float*) rad_(target)), ff ), col_diff ) );
+                    // this version seems to be a bit faster on core2 class cpus but is slower in sandy bridge...
+                    rad = vu::add( rad, vu::mul (vu::mul( tcol, ff ), col_diff ) );
+#endif
                 }
                 
                 
@@ -445,6 +450,8 @@ private:
     join_threads joiner_;
 };
 
+// deactivated after change of light_static::f_target addressing scheme
+#if 0
 class rad_core_lockfree: public rad_core {
     //typedef std::mutex lock_type;
     typedef spinlock_mutex lock_type;
@@ -512,7 +519,7 @@ public:
         } else {
 #if 1
             const size_t num_planes = scene_static_.planes().size();
-            const size_t num_threads = 2;
+            const size_t num_threads = 1;
             
             auto part = calc_plane_distribution(num_threads);
             for ( size_t i = 0; i < num_threads; ++i ) {
@@ -754,7 +761,7 @@ private:
     size_t pints_last_;
     cl_ubyte64 pints_last_time_;
 };
-
+#endif
 
 std::unique_ptr<rad_core> make_rad_core_threaded(const scene_static &scene_static, const light_static &light_static) {
     return make_unique<rad_core_threaded>( scene_static, light_static );
