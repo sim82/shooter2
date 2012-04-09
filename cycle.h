@@ -514,3 +514,24 @@ INLINE_ELAPSED(inline)
 #define HAVE_TICK_COUNTER
 #endif
 #endif /* HAVE_MIPS_ZBUS_TIMER */
+
+#ifndef cycle__hrtimer
+#define cycle__hrtimer
+
+class hrtimer {
+public:
+  hrtimer() :t_(getticks()) {}
+  
+  void reset() {
+    t_ = getticks();
+  }
+  
+  double elapsed() const {
+    return ::elapsed(getticks(), t_ );
+  }
+  
+private:
+  ticks t_;
+  
+};
+#endif
