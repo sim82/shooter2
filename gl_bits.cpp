@@ -7,7 +7,6 @@
 
 
 
-
 vbo_builder_tristrip::vbo_builder_tristrip( const scene_static &scene ) 
  : scene_static_(&scene),
    num_planes_(scene.planes().size())
@@ -144,13 +143,154 @@ void vbo_builder::draw_arrays() {
 // This is the actual draw command
     glDrawElements(GL_QUADS, num_planes_ * 4, GL_UNSIGNED_INT, (GLvoid*)((char*)NULL));
 }
+
+static const char *gl_error_to_string( GLenum err ) {
+    switch( err ) {
+        case GL_NO_ERROR: return "GL_NO_ERROR";
+        case GL_INVALID_ENUM: return "GL_INVALID_ENUM";
+        case GL_INVALID_VALUE: return "GL_INVALID_VALUE";
+        case GL_INVALID_OPERATION: return "GL_INVALID_OPERATION";
+        case GL_OUT_OF_MEMORY: return "GL_OUT_OF_MEMORY";
+        default: return "(unknown)";
+    };
+}
+
 std::string gl_error_exception::err_str(GLenum err, const char* file, int line) throw() {
     try {
         std::stringstream ss;
-        ss << "opengl error: " << int(err) << " at " << file << ":" << line;
+        ss << "opengl error: " << gl_error_to_string( err ) << " at " << file << ":" << line;
 
         return ss.str();
     } catch( std::bad_alloc x ) {
         return std::string();
     }
+}
+gl_program::gl_program(const char* vertex_src, const char* fragment_source) {
+    GLuint vertexShader = loadShader(GL_VERTEX_SHADER, vertex_src);
+    if (!vertexShader) {
+        throw std::runtime_error( "load vertex shader failed.\n" );
+    }
+
+    GLuint pixelShader = loadShader(GL_FRAGMENT_SHADER, fragment_source);
+    if (!pixelShader) {
+        throw std::runtime_error( "load fragment shader failed.\n" );
+    }
+
+    program = glCreateProgram();
+    if (program) {
+        glAttachShader(program, vertexShader);
+        check_gl_error;
+
+        glAttachShader(program, pixelShader); 
+        check_gl_error;
+
+        glLinkProgram(program); check_gl_error;
+        GLint linkStatus = GL_FALSE;
+        glGetProgramiv(program, GL_LINK_STATUS, &linkStatus);
+        if (linkStatus != GL_TRUE) {
+            GLint bufLength = 0;
+            glGetProgramiv(program, GL_INFO_LOG_LENGTH, &bufLength);
+            if (bufLength) {
+
+                std::vector<char> buf( bufLength );
+//                     char* buf = (char*) malloc(bufLength);
+
+                glGetProgramInfoLog(program, bufLength, NULL, buf.data());
+                std::cerr << "Could not link program:\n" << buf.data() << "\n";
+
+
+            }
+
+        }
+
+        gvPositionHandle = glGetAttribLocation(program, "vPosition");
+        check_gl_error;
+
+//             LOGI("glGetAttribLocation(\"vPosition\") = %d\n",
+//                  gvPositionHandle);
+//
+        gv_mvp_handle = glGetUniformLocation(program, "mvp_matrix");
+        check_gl_error;
+        
+        std::cerr << "mvp_matrix: " << gv_mvp_handle << "\n";
+        
+        //LOGI("glGetAttribLocation(\"mvp_matrix\") = %d\n", gv_mvp_handle);
+
+        color_handle_ = glGetUniformLocation(program, "color");
+        check_gl_error;
+//             LOGI("glGetAttribLocation(\"color\") = %d\n", color_handle_);
+
+
+    } else {
+        throw std::runtime_error( "glCreateProgram failed" );
+    }
+
+    std::cerr << "program created: " << program << "\n";
+    glUseProgram(program); check_gl_error;
+    
+}
+gl_program::~gl_program() {
+    // TODO: teardown gl resources
+    if( program != 0 ) {
+        glDeleteProgram(program);
+    }
+    program = 0;
+}
+void gl_program::use() {
+    assert( program != 0 );
+    check_gl_error;
+    //std::cerr << "program: " << program << "\n";
+    glUseProgram(program); check_gl_error;
+
+}
+
+GLuint gl_program::uniform_handle(const char* name) {
+    // maybe this is not faster than calling glGetUniformLocation, but at least it is guaranteed not to be slow...
+
+    std::vector<name_handle_pair>::iterator it = std::lower_bound( uniform_handles_.begin(), uniform_handles_.end(), name, compare_first_string<name_handle_pair>() );
+
+    if( it != uniform_handles_.end() && it->first == name ) {
+        return it->second;
+    }
+
+    GLuint h = glGetUniformLocation( program, name );
+
+    if( h == GLuint(-1) ) {
+        std::stringstream ss;
+        ss << "glGetUniformLocation failed: " << name;
+        throw std::runtime_error( ss.str() );
+    }
+
+    bool need_sort = (it != uniform_handles_.end());
+    uniform_handles_.push_back( std::make_pair( name, h ));
+    if( need_sort ) {
+        std::sort( uniform_handles_.begin(), uniform_handles_.end(), compare_first_string<name_handle_pair>() );
+    }
+
+    return h;
+}
+GLuint gl_program::loadShader(GLenum shaderType, const char* pSource) {
+    GLuint shader = glCreateShader(shaderType);
+    if (shader) {
+        glShaderSource(shader, 1, &pSource, NULL);
+        glCompileShader(shader);
+        GLint compiled = 0;
+        glGetShaderiv(shader, GL_COMPILE_STATUS, &compiled);
+        if (!compiled) {
+            GLint infoLen = 0;
+            glGetShaderiv(shader, GL_INFO_LOG_LENGTH, &infoLen);
+            if (infoLen) {
+                char* buf = (char*) malloc(infoLen);
+                if (buf) {
+                    glGetShaderInfoLog(shader, infoLen, NULL, buf);
+                    check_gl_error;
+
+                    free(buf);
+                }
+                glDeleteShader(shader);
+                shader = 0;
+            }
+        }
+    }
+    return shader;
 }

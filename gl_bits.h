@@ -96,7 +96,7 @@ public:
     vbo_builder( vbo_builder && ) = default;
     vbo_builder &operator=( vbo_builder && ) = default;
     
-    vbo_builder() : color_size(0), buffers_({-1,-1}), num_planes_(0) {}
+    vbo_builder() : color_size(0), buffers_{GLuint(-1),GLuint(-1)}, num_planes_(0) {}
     
     vbo_builder( size_t num_planes ) ;
     
@@ -158,4 +158,81 @@ public:
     
     size_t num_planes_;
 };
+
+
+
+
+class gl_program {
+    template<typename P>
+    class compare_first_string {
+    public:
+        bool operator()(const P &a, const P &b ) const {
+            return a.first < b.first;
+        }
+        
+        //     bool operator()(const std::string &a, const P &b ) const {
+            //         return a < b.first;
+            //     }
+            //     
+            //     bool operator()(const P &a, const std::string &b ) const {
+                //         return a.first < b;
+                //     }
+                
+        bool operator()( const char *a, const P &b ) const {
+            return a < b.first;
+        }
+        
+        bool operator()(const P &a, const char *b ) const {
+            return a.first < b;
+        }
+        
+    };
+    
+    
+public:
+    gl_program( const gl_program & ) = delete;
+    gl_program &operator=( const gl_program & ) = delete;
+    
+    gl_program( gl_program && ) = default;
+    gl_program &operator=( gl_program && ) = default;
+    
+    gl_program() : program(0) {
+        
+    }
+    
+    gl_program( const char *vertex_src, const char *fragment_source ) ;
+    ~gl_program() ;
+    void use() ;
+    
+    GLuint mvp_handle() {
+        return gv_mvp_handle;
+    }
+    GLuint position_handle() {
+        return gvPositionHandle;
+    }
+    
+    
+    GLuint color_handle() {
+        return color_handle_;
+    }
+    
+    GLuint uniform_handle( const char *name ) ;
+private:
+    
+    
+    GLuint loadShader(GLenum shaderType, const char* pSource) ;
+    
+    
+    GLuint program;
+    GLuint gvPositionHandle;
+    GLuint gv_mvp_handle;
+    GLuint color_handle_;
+    
+    typedef std::pair<std::string,GLuint> name_handle_pair;
+    
+    std::vector<name_handle_pair> uniform_handles_;
+};
+
+
+
 #endif

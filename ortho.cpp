@@ -56,7 +56,22 @@ namespace ublas = boost::numeric::ublas;
 
 
 
+static const char gVertexShader[] = 
+    "uniform mat4 mvp_matrix;\n"
+    "attribute vec4 vPosition;\n"
+    "void main() {\n"
+    "  gl_Position = mvp_matrix * gl_Vertex;\n"
+    "  gl_FrontColor = gl_Color;\n"
+    "}\n";
 
+static const char gFragmentShader[] = 
+    "precision mediump float;\n"
+    //"uniform vec4 color;\n"
+    //"attribute vec4 color;\n"
+    "void main() {\n"
+    //"  gl_FragColor = vec4(0.0, 1.0, 0.0, 1.0);\n"
+    "  gl_FragColor = gl_Color;\n"
+    "}\n";
 
 
 // class rad_core_sse : public rad_core {
@@ -596,9 +611,9 @@ public:
 
  
     ortho() :
-      pump_factor_(4) 
+      pump_factor_(4)
     {
-
+        
 //         glVertexPointer(4, GL_FLOAT, 0, ptr);
         //glEnableClientState( GL_VERTEX_ARRAY );
 //         glColorPointer(
@@ -678,6 +693,8 @@ public:
 #endif
       //  throw 0;
         
+        prog1_ = gl_program(gVertexShader, gFragmentShader);
+        
         glMatrixMode(GL_PROJECTION);                        //hello
 
         
@@ -736,26 +753,28 @@ public:
         glShadeModel(GL_FLAT);
     }
 
-    void setup_perspective( const player &camera ) {
+    CL_Mat4f setup_perspective( const player &camera ) {
         glMatrixMode(GL_PROJECTION);                        //hello
 
-        {
-            CL_Mat4f proj = CL_Mat4f::perspective( 60, 1.5, 0.2, 500 );
+        
+        CL_Mat4f proj_p = CL_Mat4f::perspective( 60, 1.5, 0.2, 500 );
             //      CL_Mat4f proj = CL_Mat4f::ortho( -20.0 * pump_factor_, 20.0 * pump_factor_, -15.0 * pump_factor_, 15.0 * pump_factor_, 0, 200 );
             //CL_Mat4f proj = CL_Mat4f::ortho( -40, 40, -30, 30, 0, 200 );
 
 
-            glLoadMatrixf( proj.matrix );
-        }
+        glLoadMatrixf( proj_p.matrix );
+        
 
         //          std::cout << "pos: " << player_pos << "\n";
 
         glMatrixMode( GL_MODELVIEW );
-        {
-            const vec3f &player_pos = camera.pos();
-            CL_Mat4f proj = CL_Mat4f::translate(-player_pos.x, -player_pos.y, -player_pos.z) * CL_Mat4f::rotate(CL_Angle(-camera.rot_x(), cl_degrees),CL_Angle(-camera.rot_y(),cl_degrees),CL_Angle(), cl_XYZ);
-            glLoadMatrixf(proj.matrix);
-        }
+        
+        const vec3f &player_pos = camera.pos();
+        CL_Mat4f proj_mv = CL_Mat4f::translate(-player_pos.x, -player_pos.y, -player_pos.z) * CL_Mat4f::rotate(CL_Angle(-camera.rot_x(), cl_degrees),CL_Angle(-camera.rot_y(),cl_degrees),CL_Angle(), cl_XYZ);
+        glLoadMatrixf(proj_mv.matrix);
+        
+        
+        return proj_mv * proj_p;
     }
 
     void setup_ortho() {
@@ -1063,12 +1082,17 @@ public:
        //     vab.draw_arrays();
             //  render_quads();
 //          glPopMatrix();
-            setup_perspective(p1);
+            auto mat_mvp = setup_perspective(p1);
+            prog1_.use();
+            glUniformMatrix4fv( prog1_.mvp_handle(), 1, GL_FALSE, mat_mvp.matrix ); check_gl_error;
+            
             glViewport( 0, 0, gc.get_width(), gc.get_height());
 //             render_quads();
 //            vab.setup_gl_pointers();
 //             vab.draw_arrays();
 //             vbob.draw_arrays();
+            
+            
             runit.draw();
 //             runit2.draw();
             wnd_.flip(1);
@@ -1287,6 +1311,9 @@ private:
 
     const size_t pump_factor_;
     vec3f base_pos_;
+    
+    gl_program prog1_;
+    
 #ifdef TEST_OPENCL    
     cl::Platform cl_platform_;
     std::vector<cl::Device> cl_used_devices_;
