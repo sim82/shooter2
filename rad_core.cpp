@@ -769,7 +769,7 @@ private:
 #endif
 
 std::unique_ptr<rad_core> make_rad_core_threaded(const scene_static &scene_static, const light_static &light_static) {
-    const size_t num_threads = 1;
+    const size_t num_threads = 3;
     
     return make_unique<rad_core_threaded>( scene_static, light_static, num_threads );
   //  return make_unique<rad_core_lockfree>( scene_static, light_static );
