@@ -18,17 +18,17 @@
 #include <ClanLib/core.h>
 #include <GL/gl.h>
 #include <GL/glx.h>
-#include <CL/cl_gl.h>
 
 
 
 #ifdef TEST_OPENCL
 #define __CL_ENABLE_EXCEPTIONS
+#include <CL/cl_gl.h>
 #include "cl.hpp"
+#include "cl_error_codes.h"
 #endif
 
 #include "cycle.h"
-#include "cl_error_codes.h"
 #include <execinfo.h>
 #include <fstream>
 #include <array>
