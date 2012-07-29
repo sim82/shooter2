@@ -58,18 +58,25 @@ namespace ublas = boost::numeric::ublas;
 
 static const char gVertexShader[] = 
     "uniform mat4 mvp_matrix;\n"
-    "attribute vec4 vPosition;\n"
-    "void main() {\n"
-    "  gl_Position = mvp_matrix * gl_Vertex;\n"
-    "  gl_FrontColor = gl_Color;\n"
-    "}\n";
+//     "attribute vec4 xxx;\n"
+    "attribute vec4 a_position;\n"
+    "attribute vec4 a_color;\n"
+    
+//     "void main() {\n"
+//     "  gl_Position = mvp_matrix * gl_Vertex;\n"
+//     "  gl_FrontColor = gl_Color;\n"
+//     "}\n";
 
+    "void main() {\n"
+    "  gl_Position = mvp_matrix * a_position;\n"
+    "  gl_FrontColor = a_color;\n"
+    "}\n";
 static const char gFragmentShader[] = 
     "precision mediump float;\n"
     //"uniform vec4 color;\n"
     //"attribute vec4 color;\n"
     "void main() {\n"
-    //"  gl_FragColor = vec4(0.0, 1.0, 0.0, 1.0);\n"
+  //  "  gl_FragColor = vec4(0.0, 1.0, 0.0, 1.0);\n"
     "  gl_FragColor = gl_Color;\n"
     "}\n";
 
@@ -360,9 +367,9 @@ public:
         vbob_ts_.update_color( light_dynamic_.rad()->begin(), light_dynamic_.rad()->end());
         
     }
-    void draw() {
+    void draw( gl_program &prog ) {
 //         vbob_.draw_arrays();
-        vbob_ts_.draw_arrays();
+        vbob_ts_.draw_arrays(prog);
     }
 private:
     vec3i base_pos_;
@@ -754,7 +761,7 @@ public:
     }
 
     CL_Mat4f setup_perspective( const player &camera ) {
-        glMatrixMode(GL_PROJECTION);                        //hello
+//         glMatrixMode(GL_PROJECTION);                        //hello
 
         
         CL_Mat4f proj_p = CL_Mat4f::perspective( 60, 1.5, 0.2, 500 );
@@ -762,43 +769,30 @@ public:
             //CL_Mat4f proj = CL_Mat4f::ortho( -40, 40, -30, 30, 0, 200 );
 
 
-        glLoadMatrixf( proj_p.matrix );
+//         glLoadMatrixf( proj_p.matrix );
         
 
         //          std::cout << "pos: " << player_pos << "\n";
 
-        glMatrixMode( GL_MODELVIEW );
+//         glMatrixMode( GL_MODELVIEW );
         
         const vec3f &player_pos = camera.pos();
         CL_Mat4f proj_mv = CL_Mat4f::translate(-player_pos.x, -player_pos.y, -player_pos.z) * CL_Mat4f::rotate(CL_Angle(-camera.rot_x(), cl_degrees),CL_Angle(-camera.rot_y(),cl_degrees),CL_Angle(), cl_XYZ);
-        glLoadMatrixf(proj_mv.matrix);
+//         glLoadMatrixf(proj_mv.matrix);
         
         
         return proj_mv * proj_p;
     }
 
-    void setup_ortho() {
-        glMatrixMode(GL_PROJECTION);                        //hello
-
-        {
-
-            CL_Mat4f proj = CL_Mat4f::ortho( -20.0, 20.0, -15.0, 15.0, 0, 200 );
-            //CL_Mat4f proj = CL_Mat4f::ortho( -40, 40, -30, 30, 0, 200 );
+    CL_Mat4f setup_ortho() {
 
 
-            glLoadMatrixf( proj.matrix );
-        }
+        CL_Mat4f proj_p = CL_Mat4f::ortho( -20.0, 20.0, -15.0, 15.0, 0, 200 );
 
-        //          std::cout << "pos: " << player_pos << "\n";
-
-        glMatrixMode( GL_MODELVIEW );
-        {
-
-            CL_Mat4f proj = CL_Mat4f::look_at( 10, 10, 10, 0, 0, 0, 0.0, 1.0, 0.0 );
-//          CL_Mat4f proj = CL_Mat4f::translate(-player_pos.x, -player_pos.y, -player_pos.z) * CL_Mat4f::rotate(CL_Angle(-p1.rot_x(), cl_degrees),CL_Angle(-p1.rot_y(),cl_degrees),CL_Angle(), cl_XYZ);
-            glLoadMatrixf(proj.matrix);
-        }
-
+        CL_Mat4f proj_mv = CL_Mat4f::look_at( 10, 10, 10, 0, 0, 0, 0.0, 1.0, 0.0 );
+        
+        return proj_mv * proj_p;
+            
     }
 
 //     void render_quads() {
@@ -1074,7 +1068,7 @@ public:
 #endif       
             
             //setup_perspective( p1 );
-            setup_ortho();
+//             setup_ortho();
 
             int ortho_width = 320;
             int ortho_heigth = 200;
@@ -1083,6 +1077,7 @@ public:
             //  render_quads();
 //          glPopMatrix();
             auto mat_mvp = setup_perspective(p1);
+            //auto mat_mvp = setup_ortho();
             prog1_.use();
             glUniformMatrix4fv( prog1_.mvp_handle(), 1, GL_FALSE, mat_mvp.matrix ); check_gl_error;
             
@@ -1093,7 +1088,7 @@ public:
 //             vbob.draw_arrays();
             
             
-            runit.draw();
+            runit.draw(prog1_);
 //             runit2.draw();
             wnd_.flip(1);
 

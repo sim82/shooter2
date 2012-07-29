@@ -81,7 +81,8 @@ void vbo_builder_tristrip::update_color_vec3fptr(const vec3f * const first, cons
     glUnmapBuffer( GL_ARRAY_BUFFER );
 }
 
-void vbo_builder_tristrip::draw_arrays() {
+void vbo_builder_tristrip::draw_arrays( gl_program &prog ) {
+#if 0
     glBindBuffer( GL_ARRAY_BUFFER, buffers_[0] ); check_gl_error;
     glVertexPointer(3, GL_FLOAT, 0, (GLvoid*)((char*)NULL));
     // glColorPointer(3, GL_FLOAT, 0, (GLvoid*)((char*)NULL+ 4 * 3 * num_planes_ * sizeof(GLfloat) ));
@@ -96,6 +97,33 @@ void vbo_builder_tristrip::draw_arrays() {
     
 //     glDrawElements(GL_TRIANGLE_STRIP, index_num_, GL_UNSIGNED_INT, (GLvoid*)((char*)NULL)); check_gl_error;
     glDrawElements(GL_TRIANGLE_STRIP, index_num_, GL_UNSIGNED_INT, (GLvoid*)((char*)NULL)); check_gl_error;
+#else
+    
+    
+    
+    
+    const GLuint VERTEX_POS_INDEX = prog.a_position_handle();
+    const GLuint VERTEX_COLOR_INDEX = prog.a_color_handle();;
+    
+    glEnableVertexAttribArray(VERTEX_POS_INDEX); check_gl_error;
+    glEnableVertexAttribArray(VERTEX_COLOR_INDEX); check_gl_error;
+    
+    
+    glBindBuffer( GL_ARRAY_BUFFER, buffers_[0] ); check_gl_error;
+    glVertexAttribPointer( VERTEX_POS_INDEX, 3, GL_FLOAT, GL_FALSE, 0, (GLvoid*)((char*)NULL) ); check_gl_error;
+    
+    glBindBuffer( GL_ARRAY_BUFFER, buffers_[1] ); check_gl_error;
+    glVertexAttribPointer( VERTEX_COLOR_INDEX, 4, GL_UNSIGNED_BYTE, GL_TRUE, 0, (GLvoid*)((char*)NULL) ); check_gl_error;
+    
+    
+    
+//     glBindAttribLocation( prog.get_program(), VERTEX_POS_INDEX, "a_position" ); check_gl_error;
+//     glBindAttribLocation( prog.get_program(), VERTEX_COLOR_INDEX, "a_color" ); check_gl_error;
+//     std::cout << glGetAttribLocation( prog.get_program(), "a_position" ) << " " << glGetAttribLocation( prog.get_program(), "a_color" ) << "\n";
+    
+    glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, index_buffer_); check_gl_error;
+    glDrawElements(GL_TRIANGLE_STRIP, index_num_, GL_UNSIGNED_INT, (GLvoid*)((char*)NULL)); check_gl_error;
+#endif
 }
 
 
@@ -165,7 +193,10 @@ std::string gl_error_exception::err_str(GLenum err, const char* file, int line) 
         return std::string();
     }
 }
-gl_program::gl_program(const char* vertex_src, const char* fragment_source) {
+gl_program::gl_program(const char* vertex_src, const char* fragment_source)
+ : a_position_handle_(0),
+   a_color_handle_(1)
+ {
     GLuint vertexShader = loadShader(GL_VERTEX_SHADER, vertex_src);
     if (!vertexShader) {
         throw std::runtime_error( "load vertex shader failed.\n" );
@@ -178,6 +209,11 @@ gl_program::gl_program(const char* vertex_src, const char* fragment_source) {
 
     program = glCreateProgram();
     if (program) {
+        
+        // use explicit attribute binding (more or less just for testing. the glGetAttribLocation method below should do exactly the same
+        glBindAttribLocation( program, a_position_handle_, "a_position" ); check_gl_error;
+        glBindAttribLocation( program, a_color_handle_, "a_color" ); check_gl_error;
+        
         glAttachShader(program, vertexShader);
         check_gl_error;
 
@@ -203,8 +239,11 @@ gl_program::gl_program(const char* vertex_src, const char* fragment_source) {
 
         }
 
-        gvPositionHandle = glGetAttribLocation(program, "vPosition");
-        check_gl_error;
+//         a_position_handle_ = glGetAttribLocation(program, "a_position");
+//         check_gl_error;
+        
+//         a_color_handle_ = glGetAttribLocation(program, "a_color");
+//         check_gl_error;
 
 //             LOGI("glGetAttribLocation(\"vPosition\") = %d\n",
 //                  gvPositionHandle);

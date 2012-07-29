@@ -23,6 +23,7 @@
 // #include "scene_bits.h"
 
 class scene_static;
+class gl_program;
 
 // the only valid reason to use the preprocessor except for include guards ;-)
 #define check_gl_error {GLenum x = glGetError(); if( x != GL_NO_ERROR ) {throw gl_error_exception(x, __FILE__, __LINE__);} }
@@ -72,7 +73,7 @@ public:
 
     }
     
-    void draw_arrays() ;
+    void draw_arrays( gl_program & program ) ;
     
     
     
@@ -207,8 +208,11 @@ public:
     GLuint mvp_handle() {
         return gv_mvp_handle;
     }
-    GLuint position_handle() {
-        return gvPositionHandle;
+    GLuint a_position_handle() {
+        return a_position_handle_;
+    }
+    GLuint a_color_handle() {
+        return a_color_handle_;
     }
     
     
@@ -217,6 +221,10 @@ public:
     }
     
     GLuint uniform_handle( const char *name ) ;
+    
+    GLuint get_program() const {
+        return program;
+    }
 private:
     
     
@@ -224,7 +232,10 @@ private:
     
     
     GLuint program;
-    GLuint gvPositionHandle;
+    
+    // cached attribute handles
+    GLuint a_position_handle_;
+    GLuint a_color_handle_;
     GLuint gv_mvp_handle;
     GLuint color_handle_;
     
