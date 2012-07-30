@@ -194,8 +194,9 @@ public:
     gl_program( const gl_program & ) = delete;
     gl_program &operator=( const gl_program & ) = delete;
     
-    gl_program( gl_program && ) = default;
-    gl_program &operator=( gl_program && ) = default;
+    // meeeeep: default move constructor/assignment is an error (for construction-only it probably works by luck)
+    gl_program( gl_program && ) = delete;
+    gl_program &operator=( gl_program && ) = delete;
     
     gl_program() : program(0) {
         
