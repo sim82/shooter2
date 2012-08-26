@@ -18,10 +18,13 @@
 #include <cassert>
 #include <stdexcept>
 
-#include <ClanLib/gl.h>
+#include <GLES2/gl2.h>
+#include <GLES2/gl2ext.h>
 
-// #include "scene_bits.h"
+#include "scene_bits.h"
 
+
+#define nullptr 0
 class scene_static;
 class gl_program;
 
@@ -47,14 +50,27 @@ public:
     
 };
 
+
+static void android_assert( const char *file, const int line, const char *func, const char *exp ) {
+    std::stringstream ss;
+    
+    ss << "assert: " << file << ":" << line << " " << func << ":\n" << exp;
+    throw std::runtime_error( ss.str() );
+}
+
+#undef assert
+#  define   assert(e)   ((e) ? (void)0 : android_assert(__FILE__, __LINE__, __func__, #e))
+
 class vbo_builder_tristrip {
 public:
+#if 0
     vbo_builder_tristrip( const vbo_builder_tristrip & ) = delete;
     const vbo_builder_tristrip &operator=( const vbo_builder_tristrip & ) = delete;
+
     
     vbo_builder_tristrip( vbo_builder_tristrip && ) = default;
     vbo_builder_tristrip &operator=( vbo_builder_tristrip && ) = default;
-    
+#endif
     vbo_builder_tristrip() : scene_static_(0) {}
     
     vbo_builder_tristrip( const scene_static &scene );
@@ -88,7 +104,7 @@ private:
     size_t num_planes_;
     size_t index_num_;
 };
-
+#if 0
 class vbo_builder {
 public:
     vbo_builder( const vbo_builder & ) = delete;
@@ -161,8 +177,8 @@ public:
 };
 
 
-
-
+#endif
+#if 1
 class gl_program {
     template<typename P>
     class compare_first_string {
@@ -205,7 +221,7 @@ public:
     gl_program( const char *vertex_src, const char *fragment_source ) ;
     ~gl_program() ;
     void use() ;
-    
+    void validate() ;
     GLuint mvp_handle() {
         return gv_mvp_handle;
     }
@@ -244,7 +260,7 @@ private:
     
     std::vector<name_handle_pair> uniform_handles_;
 };
-
+#endif
 
 
 #endif

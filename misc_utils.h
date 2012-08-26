@@ -17,10 +17,11 @@
 #define __misc_utils_h
 
 #include <ClanLib/Core/Math/vec4.h>
-#include <atomic>
+// #include <atomic>
 #include <boost/dynamic_bitset.hpp>
-#include "cycle.h"
+// #include "cycle.h"
 
+#if 0
 class spinlock_mutex {
 public:
     spinlock_mutex() : flag_(ATOMIC_FLAG_INIT) {}
@@ -36,7 +37,7 @@ public:
 private:
     std::atomic_flag flag_;
 };
-
+#endif
 typedef CL_Vec3i vec3i;
 typedef CL_Vec3f vec3f;
 
@@ -123,6 +124,7 @@ public:
     }
 };
 
+#if 0
 class tick_timer {
 public:
     tick_timer() :t1_(getticks()  ) {}
@@ -134,7 +136,19 @@ public:
 private:
     ticks t1_;
 };
+#else 
+class tick_timer {
+public:
+    tick_timer()  {}
 
+    double elapsed() {
+        return 0.0;
+    }
+
+private:
+  
+};
+#endif
 template<typename T>
 std::vector<T> apply_permutation( std::vector<T> *v1, const std::vector<size_t> &perm ) {
     //assert( v1->size() == v2->size() );

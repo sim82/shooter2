@@ -31,5 +31,5 @@ public:
 
 
 std::unique_ptr<rad_core> make_rad_core_threaded(const scene_static &scene_static, const light_static &light_static);
-
+std::unique_ptr<rad_core> make_rad_core_null(const scene_static &scene_static, const light_static &light_static);
 #endif

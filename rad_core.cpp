@@ -17,15 +17,17 @@
 
 #include <thread>
 #include <mutex>
-#include <atomic>
-#include <ClanLib/core.h>
+#include <sstream>
+// #include <atomic>
+// #include <ClanLib/core.h>
+// #include "vec_unit.h"
 
 #include "scene_bits.h"
 #include "rad_core.h"
-#include "vec_unit.h"
-#include "aligned_buffer.h"
-#include "misc_utils.h"
 
+// #include "aligned_buffer.h"
+#include "misc_utils.h"
+#if 0
 class join_threads {
   
 public:
@@ -455,6 +457,102 @@ private:
     join_threads joiner_;
 };
 
+
+class join_threads {
+  
+public:
+    join_threads( std::vector<std::thread> *threads ) : threads_( threads ) {}
+    
+    ~join_threads() {
+        for( size_t i = 0; i < threads_->size(); ++i ) {
+            if( (*threads_)[i].joinable() ) {
+                (*threads_)[i].join();
+            }
+        }
+    }
+    
+private:
+    std::vector<std::thread> * const threads_;
+    
+};
+#endif
+class rad_core_null: public rad_core {
+    
+    //typedef spinlock_mutex lock_type;
+public:
+    class worker {
+
+    };
+
+
+    rad_core_null( const scene_static &scene_static, const light_static &light_static )
+            : 
+            scene_static_(scene_static),
+            light_static_(light_static),
+            rad_is_new_(false),
+            emit_is_new_(false),
+            emit_new_(light_static.num_planes())
+            //ffs_(ffs), ff_target_(ff_target),
+            //planes_(planes),
+           
+    {
+
+        
+    }
+
+    virtual ~rad_core_null() {
+
+    }
+    
+    virtual void set_emit( const std::vector<vec3f> &emit ) {
+//         std::lock_guard<lock_type>lock(mtx_);
+
+//         std::cout << "emit: " << emit_new_.size() << " " << emit.size() << "\n";
+
+        if( emit_new_.size() != emit.size() ) {
+            std::stringstream ss;
+            ss << "emit_new_.size() != emit.size(): " << emit_new_.size() << " " << emit.size();
+            throw std::runtime_error( ss.str() );
+        }
+//         assert( emit_new_.size() == emit.size() );
+
+        emit_new_.assign( std::begin(emit), std::end(emit));
+        emit_is_new_ = true;
+    }
+
+    virtual bool update() {
+        return rad_is_new_;
+
+    }
+
+    virtual void copy( std::vector<vec3f> *out ) {
+        
+        for ( size_t i = 0; i < emit_new_.size(); ++i ) {
+            (*out)[i].r = emit_new_[i].r;
+            (*out)[i].g = emit_new_[i].g;
+            (*out)[i].b = emit_new_[i].b;
+        }
+
+     
+    }
+
+
+
+
+private:
+
+
+    const scene_static &scene_static_;
+    const light_static &light_static_;
+    
+    bool rad_is_new_;
+    bool emit_is_new_;
+
+    std::vector<col3f_sse> emit_new_;
+    
+
+};
+
 // deactivated after change of light_static::f_target addressing scheme
 #if 0
 class rad_core_lockfree: public rad_core {
@@ -767,11 +865,17 @@ private:
     cl_ubyte64 pints_last_time_;
 };
 #endif
-
+#if 0
 std::unique_ptr<rad_core> make_rad_core_threaded(const scene_static &scene_static, const light_static &light_static) {
     const size_t num_threads = 3;
     
     return make_unique<rad_core_threaded>( scene_static, light_static, num_threads );
   //  return make_unique<rad_core_lockfree>( scene_static, light_static );
 }
-
+#endif
+std::unique_ptr<rad_core> make_rad_core_null(const scene_static &scene_static, const light_static &light_static) {
+    
+    
+    return make_unique<rad_core_null>( scene_static, light_static );
+  //  return make_unique<rad_core_lockfree>( scene_static, light_static );
+}

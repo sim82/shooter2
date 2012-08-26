@@ -869,7 +869,7 @@ public:
 //         vbob.update_index_buffer(scene_static_.planes().size());
 //         vbob.update_vertices( scene_static_.planes().begin(), scene_static_.planes().end());
         
-         std::ifstream is( "cryistal-castle-hidden-ramp.txt" );
+        std::ifstream is( "cryistal-castle-hidden-ramp.txt" );
 //         std::ifstream is( "house1.txt" );
         render_unit runit(is, vec3f( -40.0, -20.0, -40.0 ));
         

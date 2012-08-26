@@ -723,18 +723,27 @@ void scene_static::init_strips() {
     
     size_t num_restart = 0;
     bool restart = !false;
+    
+    
     for( auto dir : {plane::dir_zx_p, plane::dir_zx_n, plane::dir_yz_p, plane::dir_yz_n, plane::dir_xy_p, plane::dir_xy_n} ) {
 //     for( auto dir : {plane::dir_zx_n, plane::dir_zx_n} ) {
         face_iterator it(solidc, dir);
         
         do {
+            
             if( it.is_face() ) {
                 vec3i pos = it.pos();
                 
                 if( dir == plane::dir_zx_n && pos.y == 0 ) {
                     continue; // skip faces on the underside of the level
                 }
+                
+//                 if( planes_.size() > 10 ) {
+//                     goto outside;
+//                 }
                 planes_.push_back( plane( dir, base_pos_, pos, scale, 1.0));
+                
+                
                 
                 auto &qverts = planes_.back().verts();
                         
@@ -768,6 +777,7 @@ void scene_static::init_strips() {
                     strip_vecs_.push_back(verts[3]);
                     
                     restart = false;
+                    restart = true;
                 } else {
                     strip_idx_.push_back(strip_vecs_.size());
                     strip_vecs_.push_back(verts[2]);
@@ -785,7 +795,7 @@ void scene_static::init_strips() {
         restart = true;
         
     }
-
+    outside:
     
     std::cout << "planes (striped): " << planes_.size() << "\n";
     std::cout << "vecs: " << strip_vecs_.size() << "\n";

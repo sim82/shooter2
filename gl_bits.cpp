@@ -3,9 +3,11 @@
 
 #include "scene_bits.h"
 #include "gl_bits.h"
+#include <android/log.h>
 
-
-
+#define  LOG_TAG    "gl_bits"
+#define  LOGI(...)  __android_log_print(ANDROID_LOG_INFO,LOG_TAG,__VA_ARGS__)
+#define  LOGE(...)  __android_log_print(ANDROID_LOG_ERROR,LOG_TAG,__VA_ARGS__)
 
 vbo_builder_tristrip::vbo_builder_tristrip( const scene_static &scene ) 
  : scene_static_(&scene),
@@ -13,14 +15,14 @@ vbo_builder_tristrip::vbo_builder_tristrip( const scene_static &scene )
 {
     glGenBuffers( 2, buffers_ ); check_gl_error;
     glGenBuffers( 1, &index_buffer_ ); check_gl_error;
+//     
     
     assert( sizeof(vec3f) == 3 * sizeof( GLfloat ));
     
     const size_t vertex_size = scene.strip_vecs().size() * 3 * sizeof(GLfloat);
-    const size_t color_size = scene.strip_vecs().size() * 4 * sizeof(GLubyte);
+    color_size = scene.strip_vecs().size() * 4 * sizeof(GLubyte);
     
-    index_num_ = scene.strip_idx().size();
-    const size_t index_size = index_num_ * sizeof( GLuint );
+
     
     glGenBuffers( 2, buffers_ ); check_gl_error;
     glGenBuffers( 1, &index_buffer_ ); check_gl_error;
@@ -30,13 +32,29 @@ vbo_builder_tristrip::vbo_builder_tristrip( const scene_static &scene )
 //     glBufferData( GL_ARRAY_BUFFER, -1, scene.strip_vecs().data(), GL_STATIC_DRAW ); check_gl_error;
     
     glBindBuffer( GL_ARRAY_BUFFER, buffers_[1] ); check_gl_error;
-    glBufferData( GL_ARRAY_BUFFER, color_size, 0, GL_DYNAMIC_DRAW ); check_gl_error; check_gl_error;
-    
+    glBufferData( GL_ARRAY_BUFFER, color_size, 0, GL_DYNAMIC_DRAW ); check_gl_error;
+    glBindBuffer(GL_ARRAY_BUFFER, 0);
 //     glPrimitiveRestartIndex( scene_static::restart_idx ); check_gl_error;
-    assert(scene.strip_idx().size() * sizeof(GLuint) == index_size );
+    //assert(scene.strip_idx().size() * sizeof(GLuint) == index_size );
+    glBindBuffer( GL_ARRAY_BUFFER, index_buffer_ );
     glBindBuffer( GL_ELEMENT_ARRAY_BUFFER, index_buffer_ ); check_gl_error;
-    glBufferData( GL_ELEMENT_ARRAY_BUFFER, index_size, scene.strip_idx().data(), GL_STATIC_DRAW ); check_gl_error; 
+//     LOGI( "index buffer: %u %d\n", index_buffer_, glIsBuffer(index_buffer_));
     
+    index_num_ = scene.strip_idx().size();
+    
+    
+#if 0
+    // convert to 16bit for testing.
+    const size_t index_size = index_num_ * sizeof( GLushort );
+    std::vector<GLushort> strip_tmp( scene.strip_idx().begin(), scene.strip_idx().end() );
+#else
+//     for( size_t i = 0; i < scene.strip_idx().size(); ++i ) {
+//         LOGI( "idx: %d\n", scene.strip_idx()[i] );
+//     }
+
+    const size_t index_size = index_num_ * sizeof( GLuint );
+    glBufferData( GL_ELEMENT_ARRAY_BUFFER, index_size, scene.strip_idx().data(), GL_STATIC_DRAW ); check_gl_error; 
+#endif
     
 }
 void vbo_builder_tristrip::update_color_vec3fptr(const vec3f * const first, const vec3f * const last) {
@@ -44,8 +62,19 @@ void vbo_builder_tristrip::update_color_vec3fptr(const vec3f * const first, cons
     //assert( 0 );
     assert( std::distance( first, last ) == ptrdiff_t(num_planes_) );
     
+	
     glBindBuffer( GL_ARRAY_BUFFER, buffers_[1] );
-    GLubyte *b_base = (GLubyte*) glMapBuffer( GL_ARRAY_BUFFER, GL_WRITE_ONLY ); check_gl_error;
+#if 0
+	GLubyte *b_base = (GLubyte*) glMapBuffer( GL_ARRAY_BUFFER, GL_WRITE_ONLY ); check_gl_error;
+#else
+	size_t num_vs = std::distance( first, last );
+	
+	std::vector<GLubyte> tmp_buf( color_size );
+	GLubyte *b_base = tmp_buf.data();
+    
+    
+#endif
+
 //     std::fill( b_base, b_base + 1000, 255 );
 //     glUnmapBuffer( GL_ARRAY_BUFFER );
 //     return;
@@ -67,7 +96,10 @@ void vbo_builder_tristrip::update_color_vec3fptr(const vec3f * const first, cons
         
         for( uint32_t i = pair.first; i < pair.second; ++i ) {
             GLubyte *b = b_base + i * 4;
-            
+//             *(b++) = 255;
+//             *(b++) = 255;
+//             *(b++) = 255;
+//             *(b++) = 255;
             *(b++) = gl_utils::clamp<0,255>(255 * cur->r);
             *(b++) = gl_utils::clamp<0,255>(255 * cur->g);
             *(b++) = gl_utils::clamp<0,255>(255 * cur->b);
@@ -77,8 +109,13 @@ void vbo_builder_tristrip::update_color_vec3fptr(const vec3f * const first, cons
     }
 
 
-
+#if 0
     glUnmapBuffer( GL_ARRAY_BUFFER );
+#else
+
+    glBufferData( GL_ARRAY_BUFFER, color_size, tmp_buf.data(), GL_STREAM_DRAW ); check_gl_error;
+    glBindBuffer( GL_ARRAY_BUFFER, 0 );
+#endif
 }
 
 void vbo_builder_tristrip::draw_arrays( gl_program &prog ) {
@@ -100,7 +137,7 @@ void vbo_builder_tristrip::draw_arrays( gl_program &prog ) {
 #else
     
     
-    
+
     
     const GLuint VERTEX_POS_INDEX = prog.a_position_handle();
     const GLuint VERTEX_COLOR_INDEX = prog.a_color_handle();;
@@ -114,20 +151,22 @@ void vbo_builder_tristrip::draw_arrays( gl_program &prog ) {
     
     glBindBuffer( GL_ARRAY_BUFFER, buffers_[1] ); check_gl_error;
     glVertexAttribPointer( VERTEX_COLOR_INDEX, 4, GL_UNSIGNED_BYTE, GL_TRUE, 0, (GLvoid*)((char*)NULL) ); check_gl_error;
-    
-    
-    
-//     glBindAttribLocation( prog.get_program(), VERTEX_POS_INDEX, "a_position" ); check_gl_error;
-//     glBindAttribLocation( prog.get_program(), VERTEX_COLOR_INDEX, "a_color" ); check_gl_error;
-//     std::cout << glGetAttribLocation( prog.get_program(), "a_position" ) << " " << glGetAttribLocation( prog.get_program(), "a_color" ) << "\n";
-    
+    glBindBuffer(GL_ARRAY_BUFFER, 0);
+
     glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, index_buffer_); check_gl_error;
-    glDrawElements(GL_TRIANGLE_STRIP, index_num_, GL_UNSIGNED_INT, (GLvoid*)((char*)NULL)); check_gl_error;
+//     prog.validate();
+    
+    glDrawElements(GL_TRIANGLE_STRIP, index_num_, GL_UNSIGNED_INT, (GLvoid*)((char*)NULL)); 
+    prog.validate();
+    check_gl_error;
+
+   // glDrawArrays( GL_TRIANGLE_STRIP, 0, 4 ); check_gl_error;
+
 #endif
 }
 
 
-
+#if 0
 vbo_builder::vbo_builder(size_t num_planes) : num_planes_(num_planes) {
     //GLuint b;
     glGenBuffers( 2, buffers_ );
@@ -171,7 +210,7 @@ void vbo_builder::draw_arrays() {
 // This is the actual draw command
     glDrawElements(GL_QUADS, num_planes_ * 4, GL_UNSIGNED_INT, (GLvoid*)((char*)NULL));
 }
-
+#endif
 static const char *gl_error_to_string( GLenum err ) {
     switch( err ) {
         case GL_NO_ERROR: return "GL_NO_ERROR";
@@ -193,10 +232,13 @@ std::string gl_error_exception::err_str(GLenum err, const char* file, int line) 
         return std::string();
     }
 }
+
+#if 1
 gl_program::gl_program(const char* vertex_src, const char* fragment_source)
  : a_position_handle_(0),
    a_color_handle_(1)
  {
+//      assert(0);
     GLuint vertexShader = loadShader(GL_VERTEX_SHADER, vertex_src);
     if (!vertexShader) {
         throw std::runtime_error( "load vertex shader failed.\n" );
@@ -222,17 +264,20 @@ gl_program::gl_program(const char* vertex_src, const char* fragment_source)
 
         glLinkProgram(program); check_gl_error;
         GLint linkStatus = GL_FALSE;
-        glGetProgramiv(program, GL_LINK_STATUS, &linkStatus);
+        glGetProgramiv(program, GL_LINK_STATUS, &linkStatus);check_gl_error;
         if (linkStatus != GL_TRUE) {
             GLint bufLength = 0;
-            glGetProgramiv(program, GL_INFO_LOG_LENGTH, &bufLength);
+            glGetProgramiv(program, GL_INFO_LOG_LENGTH, &bufLength);check_gl_error;
             if (bufLength) {
 
                 std::vector<char> buf( bufLength );
 //                     char* buf = (char*) malloc(bufLength);
 
-                glGetProgramInfoLog(program, bufLength, NULL, buf.data());
-                std::cerr << "Could not link program:\n" << buf.data() << "\n";
+                
+                glGetProgramInfoLog(program, bufLength, NULL, buf.data()); check_gl_error;
+                std::stringstream ss;
+                ss << "Could not link program:\n" << buf.data() << "\n";
+                throw std::runtime_error( ss.str() );
 
 
             }
@@ -291,7 +336,10 @@ GLuint gl_program::uniform_handle(const char* name) {
     if( it != uniform_handles_.end() && it->first == name ) {
         return it->second;
     }
-
+    
+	//__android_log_print( ANDROID_LOG_INFO, "libgl2jni", "xxx" );
+	
+	
     GLuint h = glGetUniformLocation( program, name );
 
     if( h == GLuint(-1) ) {
@@ -306,6 +354,8 @@ GLuint gl_program::uniform_handle(const char* name) {
         std::sort( uniform_handles_.begin(), uniform_handles_.end(), compare_first_string<name_handle_pair>() );
     }
 
+    //__android_log_print( ANDROID_LOG_INFO, "libgl2jni", "yyy" );
+    
     return h;
 }
 GLuint gl_program::loadShader(GLenum shaderType, const char* pSource) {
@@ -333,3 +383,22 @@ GLuint gl_program::loadShader(GLenum shaderType, const char* pSource) {
     }
     return shader;
 }
+void gl_program::validate() {
+    glValidateProgram(program);
+    GLint status = -1;
+    glGetProgramiv(program, GL_VALIDATE_STATUS, &status);
+    //LOGI( "validate: status: %d\n" );
+
+    
+    
+
+    if( status != GL_TRUE ) {
+        GLsizei len;
+        std::vector<GLchar> log( 1024 );
+        glGetProgramInfoLog( program, log.size(), &len, log.data());
+        
+        LOGI( "program log: %s\n", log.data() );
+        throw std::runtime_error( "glsl program validation failed.\n" );
+    }
+}
+#endif
