@@ -17,7 +17,12 @@ FIND_PACKAGE(ClanLib REQUIRED)
 
 INCLUDE_DIRECTORIES(${ClanLib_INCLUDE_DIRS})
 
-TARGET_LINK_LIBRARIES(ortho ${ClanLib_Core_LIBRARY} ${ClanLib_App_LIBRARY} ${ClanLib_Sound_LIBRARY} ${ClanLib_Display_LIBRARY} ${ClanLib_GL_LIBRARY}  ${ClanLib_GUI_LIBRARY}  -lclan23CSSLayout -lGL -lX11 -lfreetype -lfontconfig -pthread OpenCL)
+IF(TEST_CL)
+SET( CL_LIBS OpenCL)
+ADD_DEFINES(-DTEST_CL)
+ENDIF()
+
+TARGET_LINK_LIBRARIES(ortho ${ClanLib_Core_LIBRARY} ${ClanLib_App_LIBRARY} ${ClanLib_Sound_LIBRARY} ${ClanLib_Display_LIBRARY} ${ClanLib_GL_LIBRARY}  ${ClanLib_GUI_LIBRARY}  -lclan23CSSLayout -lGL -lX11 -lfreetype -lfontconfig -pthread ${CL_LIBS})
 #TARGET_LINK_LIBRARIES(clangl ${ClanLib_Core_LIBRARY} ${ClanLib_App_LIBRARY} ${ClanLib_Sound_LIBRARY} ${ClanLib_Display_LIBRARY} ${ClanLib_GL_LIBRARY}  ${ClanLib_GUI_LIBRARY}  -lclan23CSSLayout -lGL -lX11 -lfreetype -lfontconfig -pthread)
 #TARGET_LINK_LIBRARIES(shooter2 ${ClanLib_Core_LIBRARY} ${ClanLib_App_LIBRARY} ${ClanLib_Sound_LIBRARY} ${ClanLib_Display_LIBRARY} ${ClanLib_GL_LIBRARY} -lX11 -lfreetype -lfontconfig -pthread)
 #TARGET_LINK_LIBRARIES(rad ${ClanLib_Core_LIBRARY} ${ClanLib_App_LIBRARY} ${ClanLib_Sound_LIBRARY} ${ClanLib_Display_LIBRARY} ${ClanLib_GL_LIBRARY}  -lX11 -lfreetype -lfontconfig -pthread)

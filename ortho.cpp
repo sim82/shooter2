@@ -22,6 +22,7 @@
 
 
 #ifdef TEST_OPENCL
+#include <CL/cl_gl.h>
 #define __CL_ENABLE_EXCEPTIONS
 #include <CL/cl_gl.h>
 #include "cl.hpp"
