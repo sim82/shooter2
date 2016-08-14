@@ -195,8 +195,30 @@ public:
     gl_program &operator=( const gl_program & ) = delete;
     
     // meeeeep: default move constructor/assignment is an error (for construction-only it probably works by luck)
-    gl_program( gl_program && ) = delete;
-    gl_program &operator=( gl_program && ) = delete;
+    gl_program( gl_program && other)
+    {
+        program = other.program;
+        other.program = 0;
+
+        a_position_handle_  = other.a_position_handle_;
+        a_color_handle_     = other.a_color_handle_;
+        gv_mvp_handle       = other.gv_mvp_handle;
+        color_handle_       = other.color_handle_;
+
+        uniform_handles_ = std::move(other.uniform_handles_);
+    }
+
+    gl_program &operator=( gl_program && other)
+    {
+        std::swap( program, other.program );
+
+        a_position_handle_  = other.a_position_handle_;
+        a_color_handle_     = other.a_color_handle_;
+        gv_mvp_handle       = other.gv_mvp_handle;
+        color_handle_       = other.color_handle_;
+
+        uniform_handles_ = std::move(other.uniform_handles_);
+    }
     
     gl_program() : program(0) {
         
