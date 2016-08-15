@@ -16,10 +16,13 @@
 #ifndef __misc_utils_h
 #define __misc_utils_h
 
+#include "cycle.h"
+
 #include <ClanLib/Core/Math/vec4.h>
 #include <atomic>
 #include <boost/dynamic_bitset.hpp>
-#include "cycle.h"
+#include <glm/vec3.hpp>
+#include <glm/geometric.hpp>
 
 class spinlock_mutex {
 public:
@@ -37,8 +40,11 @@ private:
     std::atomic_flag flag_;
 };
 
-typedef CL_Vec3i vec3i;
-typedef CL_Vec3f vec3f;
+
+//typedef CL_Vec3i vec3i;
+//typedef CL_Vec3f vec3f;
+using vec3i = glm::ivec3;
+using vec3f = glm::vec3;
 
 struct col3f_sse {
     float r;
@@ -65,10 +71,10 @@ struct col3f_sse {
 };
 
 template<typename vec_t>
-typename vec_t::datatype dist_sqr( const vec_t &v1, const vec_t &v2 ) {
+typename vec_t::value_type dist_sqr( const vec_t &v1, const vec_t &v2 ) {
     vec_t vd = v1 - v2;
 
-    return vd.dot(vd);
+    return glm::dot(vd, vd);
 }
 
 

@@ -340,7 +340,7 @@ public:
     void clear_emit() { light_dynamic_.clear_emit(); }
     void render_light(const vec3f &pos, const vec3f &color)
     {
-        light_utils::render_light(light_dynamic_.emit(), scene_static_, pos - base_pos_, color);
+        light_utils::render_light(light_dynamic_.emit(), scene_static_, pos - vec3f(base_pos_), color);
     }
 
     void update()
@@ -993,7 +993,7 @@ public:
                     // vec3f light_pos( p1.pos)
 
                     //              vec3f light_pos = (p1.pos()* pump_factor_) - base_pos_;
-                    vec3f light_weird = (light_pos * pump_factor_) - base_pos_;
+                    vec3f light_weird = (vec3f(light_pos) * float(pump_factor_)) - base_pos_;
                     //                     light_utils::render_light( light_dynamic_.emit(), scene_static_, light_weird,
                     //                     vec3f(1.0, 0.8, 0.6 ));
                     runit.render_light(light_weird, vec3f(1.0, 0.8, 0.6));

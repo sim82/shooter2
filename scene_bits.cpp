@@ -480,9 +480,9 @@ plane::plane(plane::dir_type d, const vec3f &base_pos, const vec3i &pos, float s
     std::array<float, 4> vg0 = vgen0(d);
     std::array<float, 4> vg1 = vgen1(d);
 
-    vec3f norm2 = normal(d) * 0.5;
+    vec3f norm2 = normal(d) * 0.5f;
 
-    vec3f trans_pos = (base_pos + pos);
+    vec3f trans_pos = (base_pos + vec3f(pos));
 
     for (size_t i = 0; i < 4; ++i)
     {
@@ -995,22 +995,23 @@ void light_utils::render_light(std::vector<vec3f> *emitptr, const scene_static &
     {
 
         auto &p = scene.planes()[i];
-
-        vec3f trace_pos = p.pos() + p.norm();
+        vec3f planePos(p.pos());
+        vec3f trace_pos = planePos + p.norm();
 
         const bool occ = true && util::occluded(light_pos, trace_pos, scene.solid());
 
         if (!occ)
         {
-            vec3f d = light_pos - p.pos();
-            d.normalize();
-            float len = d.length();
+            // normalize: make directional light
+            vec3f d = glm::normalize(light_pos - planePos);
+
+            auto const len = glm::length(d);
             d /= len;
-            float dot = d.dot(p.norm());
+            float dot = glm::dot(d, p.norm());
 
             if (dot > 0)
             {
-                emit_rgb_[i] += (p.col_diff() * light_color) * dot * (5 / (2 * 3.1415 * len * len));
+                emit_rgb_[i] += (p.col_diff() * light_color) * dot * (5 / (2 * 3.1415f * len * len));
             }
         }
     }
@@ -1150,11 +1151,11 @@ light_static setup_formfactors(const std::vector<plane> &planes_, const bitmap3d
             float ff = 0;
             {
 
-                vec3f dn = (p1f - p2f).normalize();
+                vec3f dn = glm::normalize(p1f - p2f);
                 // std::cout << p1_3d << " " << p2_3d << " " << dn << "\n";
                 //.norm();
-                float ff1 = std::max(0.0f, norm1.dot(vec3f(0.0, 0.0, 0.0) - dn));
-                float ff2 = std::max(0.0f, norm2.dot(dn));
+                float ff1 = std::max(0.0f, glm::dot(norm1, vec3f(0.0, 0.0, 0.0) - dn));
+                float ff2 = std::max(0.0f, glm::dot(norm2, dn));
 
                 ff = ff1 * ff2;
                 //                  ff = std::max( 0.0f, ff );
@@ -1173,7 +1174,7 @@ light_static setup_formfactors(const std::vector<plane> &planes_, const bitmap3d
             if (!dist_cull && i != j)
             {
 
-                if (util::occluded(p1 + norm1, p2 + norm2, solid_))
+                if (util::occluded(p1f + norm1, p2f + norm2, solid_))
                 {
                     os << "0 ";
                     continue;
