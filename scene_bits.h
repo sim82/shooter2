@@ -318,36 +318,9 @@ public:
     size_t num_planes() const { return f_fact_.size(); }
 
     const std::vector<std::vector<float>> &f_fact() const { return f_fact_; }
-
-    //     const std::vector<std::vector<int> > &f_target() const {
-    //         return f_target_;
-    //     }
-
     const std::vector<std::vector<int>> &f_target_off4() const { return f_target_; }
 
-    //     const std::vector<std::vector<ff_pair> > &f_pairs() const {
-    //         return f_pairs_;
-    //     }
-
 private:
-    //     static std::vector<std::vector<ff_pair> > init_pairs( const std::vector<std::vector<float> > &fact, const
-    //     std::vector<std::vector<int> > &target ) {
-    //         std::vector<std::vector<ff_pair> > pairs( fact.size() );
-    //         assert( fact.size() == target.size() );
-    //         for( size_t i = 0; i < fact.size(); ++i ) {
-    //             assert( fact[i].size() == target[i].size() );
-    //
-    //             pairs[i].reserve(fact.size());
-    //             for( size_t j = 0; j < fact[i].size(); ++j ) {
-    //
-    //
-    //                 pairs[i].emplace_back( fact[i][j], target[i][j] );
-    //             }
-    //         }
-    //
-    //
-    //         return pairs;
-    //     }
 
     std::vector<std::vector<float>> f_fact_;
     std::vector<std::vector<int>> f_target_;

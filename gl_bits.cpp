@@ -8,6 +8,8 @@ vbo_builder_tristrip::vbo_builder_tristrip(const scene_static &scene)
     : scene_static_(&scene)
     , num_planes_(scene.planes().size())
 {
+    check_gl_error;
+
     glGenBuffers(2, buffers_);
     check_gl_error;
     glGenBuffers(1, &index_buffer_);
