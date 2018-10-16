@@ -239,7 +239,7 @@ public:
     void init_solid(const std::vector<crystal_bits::matrix_ptr> &slices);
 
     void init_planes();
-    void init_strips();
+    void init_tris();
 
     const std::vector<plane> &planes() const { return planes_; }
 
@@ -247,18 +247,18 @@ public:
 
     uint64_t hash() const { return solid_.hash(); }
 
-    const std::vector<vec3f> &strip_vecs() const { return strip_vecs_; }
-    const std::vector<uint32_t> &strip_idx() const { return strip_idx_; }
+    const std::vector<vec3f> &tri_vecs() const { return tri_vecs_; }
+    const std::vector<uint32_t> &tri_idx() const { return tri_idx_; }
 
-    const std::vector<idx_pair> &strip_idx_pairs() const { return strip_idx_pairs_; }
+    const std::vector<idx_pair> &tri_idx_pairs() const { return strip_idx_pairs_; }
 
 private:
     std::vector<plane> planes_;
     bitmap3d solid_;
     vec3f base_pos_;
 
-    std::vector<vec3f> strip_vecs_;
-    std::vector<uint32_t> strip_idx_;
+    std::vector<vec3f> tri_vecs_;
+    std::vector<uint32_t> tri_idx_;
 
     std::vector<idx_pair> strip_idx_pairs_;
 };

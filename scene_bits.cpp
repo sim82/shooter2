@@ -743,7 +743,7 @@ const static std::array<vec3f, 4> reorder_strip(const std::array<vec3f, 4> &in, 
 }
 
 #if 1
-void scene_static::init_strips()
+void scene_static::init_tris()
 {
 
     const auto &solidc = solid_;
@@ -776,49 +776,19 @@ void scene_static::init_strips()
                 auto &qverts = planes_.back().verts();
 
                 auto verts         = reorder_strip(qverts, dir);
-                uint32_t first_idx = strip_vecs_.size();
-                if (restart)
-                {
-                    // strip_idx_.push_back(restart_idx);
-                    // output degenerated tris to jump to restart position
-                    if (true)
-                    {
-                        strip_idx_.push_back(strip_vecs_.size() - 1);
-                        strip_idx_.push_back(strip_vecs_.size());
-                    }
-                    else
-                    {
-                        strip_idx_.push_back(strip_vecs_.size());
+                auto firstVert = tri_vecs_.size();
+                tri_vecs_.push_back(verts[0]);
+                tri_vecs_.push_back(verts[1]);
+                tri_vecs_.push_back(verts[2]);
+                tri_vecs_.push_back(verts[3]);
+                tri_idx_.push_back(firstVert+0);
+                tri_idx_.push_back(firstVert+1);
+                tri_idx_.push_back(firstVert+2);
+                tri_idx_.push_back(firstVert+2);
+                tri_idx_.push_back(firstVert+1);
+                tri_idx_.push_back(firstVert+3);
 
-                        vec3f t = strip_vecs().back();
-                        strip_vecs_.push_back(t);
-                        strip_idx_.push_back(strip_vecs_.size());
-                        strip_vecs_.push_back(verts[0]);
-                    }
-
-                    strip_idx_.push_back(strip_vecs_.size());
-                    strip_vecs_.push_back(verts[0]);
-
-                    strip_idx_.push_back(strip_vecs_.size());
-                    strip_vecs_.push_back(verts[1]);
-
-                    strip_idx_.push_back(strip_vecs_.size());
-                    strip_vecs_.push_back(verts[2]);
-
-                    strip_idx_.push_back(strip_vecs_.size());
-                    strip_vecs_.push_back(verts[3]);
-
-                    restart = false;
-                }
-                else
-                {
-                    strip_idx_.push_back(strip_vecs_.size());
-                    strip_vecs_.push_back(verts[2]);
-
-                    strip_idx_.push_back(strip_vecs_.size());
-                    strip_vecs_.push_back(verts[3]);
-                }
-                strip_idx_pairs_.emplace_back(first_idx, strip_vecs_.size());
+                strip_idx_pairs_.emplace_back(firstVert, tri_vecs_.size());
             }
             else
             {
@@ -830,7 +800,7 @@ void scene_static::init_strips()
     }
 
     std::cout << "planes (striped): " << planes_.size() << "\n";
-    std::cout << "vecs: " << strip_vecs_.size() << "\n";
+    std::cout << "vecs: " << tri_vecs_.size() << "\n";
     planes_.shrink_to_fit();
 }
 

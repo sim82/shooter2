@@ -148,7 +148,7 @@ public:
         scene_static_.init_solid_from_crystal(is, pump_factor);
 
         //        scene_static_.init_planes();
-        scene_static_.init_strips();
+        scene_static_.init_tris();
         uint64_t scene_hash = scene_static_.hash();
         auto bin_name       = hash_to_filename(scene_hash);
 
@@ -183,7 +183,7 @@ public:
         //         vbob_.update_index_buffer( scene_static_.planes().size());
         //         vbob_.update_vertices( scene_static_.planes().begin(), scene_static_.planes().end());
         //
-        vbob_ts_ = vbo_builder_tristrip(scene_static_);
+        vbob_ts_ = vbo_builder_triangles(scene_static_);
     }
 
     void clear_emit() { light_dynamic_.clear_emit(); }
@@ -218,7 +218,7 @@ private:
     std::unique_ptr<IRadCore> rad_core_;
 
     //     vbo_builder vbob_;
-    vbo_builder_tristrip vbob_ts_;
+    vbo_builder_triangles vbob_ts_;
 };
 
 

@@ -4,7 +4,7 @@
 #include "gl_bits.h"
 #include "scene_bits.h"
 
-vbo_builder_tristrip::vbo_builder_tristrip(const scene_static &scene)
+vbo_builder_triangles::vbo_builder_triangles(const scene_static &scene)
     : scene_static_(&scene)
     , num_planes_(scene.planes().size())
 {
@@ -17,10 +17,10 @@ vbo_builder_tristrip::vbo_builder_tristrip(const scene_static &scene)
 
     assert(sizeof(vec3f) == 3 * sizeof(GLfloat));
 
-    const size_t vertex_size = scene.strip_vecs().size() * 3 * sizeof(GLfloat);
-    const size_t color_size  = scene.strip_vecs().size() * 4 * sizeof(GLubyte);
+    const size_t vertex_size = scene.tri_vecs().size() * 3 * sizeof(GLfloat);
+    const size_t color_size  = scene.tri_vecs().size() * 4 * sizeof(GLubyte);
 
-    index_num_              = scene.strip_idx().size();
+    index_num_              = scene.tri_idx().size();
     const size_t index_size = index_num_ * sizeof(GLuint);
 
     glGenBuffers(2, buffers_);
@@ -30,7 +30,7 @@ vbo_builder_tristrip::vbo_builder_tristrip(const scene_static &scene)
 
     glBindBuffer(GL_ARRAY_BUFFER, buffers_[0]);
     check_gl_error;
-    glBufferData(GL_ARRAY_BUFFER, vertex_size, scene.strip_vecs().data(), GL_STATIC_DRAW);
+    glBufferData(GL_ARRAY_BUFFER, vertex_size, scene.tri_vecs().data(), GL_STATIC_DRAW);
     check_gl_error;
     //     glBufferData( GL_ARRAY_BUFFER, -1, scene.strip_vecs().data(), GL_STATIC_DRAW ); check_gl_error;
 
@@ -41,13 +41,13 @@ vbo_builder_tristrip::vbo_builder_tristrip(const scene_static &scene)
     check_gl_error;
 
     //     glPrimitiveRestartIndex( scene_static::restart_idx ); check_gl_error;
-    assert(scene.strip_idx().size() * sizeof(GLuint) == index_size);
+    assert(scene.tri_idx().size() * sizeof(GLuint) == index_size);
     glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, index_buffer_);
     check_gl_error;
-    glBufferData(GL_ELEMENT_ARRAY_BUFFER, index_size, scene.strip_idx().data(), GL_STATIC_DRAW);
+    glBufferData(GL_ELEMENT_ARRAY_BUFFER, index_size, scene.tri_idx().data(), GL_STATIC_DRAW);
     check_gl_error;
 }
-void vbo_builder_tristrip::update_color_vec3fptr(const vec3f *const first, const vec3f *const last)
+void vbo_builder_triangles::update_color_vec3fptr(const vec3f *const first, const vec3f *const last)
 {
     assert(scene_static_ != nullptr);
     // assert( 0 );
@@ -66,7 +66,7 @@ void vbo_builder_tristrip::update_color_vec3fptr(const vec3f *const first, const
 
     const vec3f *cur = first;
 
-    const auto &idx_pairs = scene_static_->strip_idx_pairs();
+    const auto &idx_pairs = scene_static_->tri_idx_pairs();
     assert(idx_pairs.size() == num_planes_);
 
     for (; cur != last; ++cur)
@@ -90,7 +90,7 @@ void vbo_builder_tristrip::update_color_vec3fptr(const vec3f *const first, const
     glUnmapBuffer(GL_ARRAY_BUFFER);
 }
 
-void vbo_builder_tristrip::draw_arrays(gl_program &prog)
+void vbo_builder_triangles::draw_arrays(gl_program &prog)
 {
 #if 0
     glBindBuffer( GL_ARRAY_BUFFER, buffers_[0] ); check_gl_error;
@@ -135,7 +135,7 @@ void vbo_builder_tristrip::draw_arrays(gl_program &prog)
 
     glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, index_buffer_);
     check_gl_error;
-    glDrawElements(GL_TRIANGLE_STRIP, index_num_, GL_UNSIGNED_INT, (GLvoid *)((char *)NULL));
+    glDrawElements(GL_TRIANGLES, index_num_, GL_UNSIGNED_INT, (GLvoid *)((char *)NULL));
     check_gl_error;
 #endif
 }

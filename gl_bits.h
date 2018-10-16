@@ -58,21 +58,21 @@ public:
     }
 };
 
-class vbo_builder_tristrip
+class vbo_builder_triangles
 {
 public:
-    vbo_builder_tristrip(const vbo_builder_tristrip &) = delete;
-    const vbo_builder_tristrip &operator=(const vbo_builder_tristrip &) = delete;
+    vbo_builder_triangles(const vbo_builder_triangles &) = delete;
+    const vbo_builder_triangles &operator=(const vbo_builder_triangles &) = delete;
 
-    vbo_builder_tristrip(vbo_builder_tristrip &&) = default;
-    vbo_builder_tristrip &operator=(vbo_builder_tristrip &&) = default;
+    vbo_builder_triangles(vbo_builder_triangles &&) = default;
+    vbo_builder_triangles &operator=(vbo_builder_triangles &&) = default;
 
-    vbo_builder_tristrip()
+    vbo_builder_triangles()
         : scene_static_(0)
     {
     }
 
-    vbo_builder_tristrip(const scene_static &scene);
+    vbo_builder_triangles(const scene_static &scene);
 
     void update_color_vec3fptr(const vec3f *const first, const vec3f *const last);
 
